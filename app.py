@@ -14,8 +14,11 @@ import json
 import os
 import time
 
+import html as html_escape_mod
+
 import requests
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -190,6 +193,48 @@ def recheck_article(req: RecheckRequest):
 def get_articles(limit: int = 500):
     """取稿件库里的稿件（新→旧）。"""
     return {"articles": store.all_articles(limit=limit)}
+
+
+# ================= 文章预览页（只读）：干净的独立文章页，供 Wechatsync 等扩展提取同步 =================
+_ARTICLE_PAGE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  body{{margin:0;background:#fff;color:#222;font:17px/1.9 -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}}
+  article{{max-width:680px;margin:0 auto;padding:48px 24px 80px}}
+  h1{{font-size:26px;line-height:1.4;margin:0 0 28px}}
+  p{{margin:0 0 22px}}
+  img{{max-width:100%;height:auto;display:block;margin:0 auto 26px;border-radius:4px}}
+</style>
+</head>
+<body>
+<article>
+<h1>{title}</h1>
+{image}
+{paras}
+</article>
+</body>
+</html>"""
+
+
+@app.get("/article/{article_id}", response_class=HTMLResponse)
+def article_preview(article_id: str):
+    """按 id 渲染一篇干净的文章页：<h1>标题 + 首图置顶 + 每段 <p>。只读，不改任何数据。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == article_id), None)
+    if not art:
+        return HTMLResponse(
+            "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'><title>404</title></head>"
+            "<body style='font-family:sans-serif;padding:60px;text-align:center'>"
+            "<h1>404</h1><p>稿件不存在或已被删除</p></body></html>", status_code=404)
+    esc = html_escape_mod.escape
+    title = esc(art["title"])
+    paras = "\n".join(f"<p>{esc(p.strip())}</p>"
+                      for p in (art.get("body") or "").split("\n") if p.strip())
+    image = f'<img src="/output/{esc(art["image"])}" alt="{title}">' if art.get("image") else ""
+    return HTMLResponse(_ARTICLE_PAGE.format(title=title, image=image, paras=paras))
 
 
 # ================= 设置读写（key 绝不经接口读写，只返回是否已配的 bool）=================
