@@ -354,7 +354,8 @@ async function loadSettingsData(){
     if(!res.ok) throw new Error('请求失败：'+res.status);
     const d=await res.json();
     SET={sources:d.hotspot.sources||[], all:d.hotspot.all_sources||[],
-         dailyhot:(d.services||{}).dailyhot||'unknown', research:d.research||null, tracks:d.tracks||[]};
+         dailyhot:(d.services||{}).dailyhot||'unknown', research:d.research||null, tracks:d.tracks||[],
+         auto:d.auto||null};
   }catch(e){
     const box=document.getElementById('setBody');
     if(box) box.innerHTML=`<div class="placeholder-note">读取配置失败：${escapeHtml(e.message)}</div>`;
@@ -449,6 +450,27 @@ async function toggleTrack(key, el){
   }
 }
 
+// 自动流水线区块（只读展示；改配置编辑 settings.yaml 的 auto 段）
+function autoSecHtml(){
+  const A=SET.auto;
+  if(!A) return '';
+  const PN={toutiao:'头条',baijiahao:'百家号',zhihu:'知乎'};
+  const lr=A.last_run;
+  const lrTxt=!lr?'还没跑过'
+    :`${lr.time}（${lr.trigger==='schedule'?'定时':'手动'}）· ${lr.summary||lr.skipped||lr.error||(lr.ok?'完成':'失败')}`;
+  return `
+    <div class="set-sec">
+      <h2>⏱ 自动流水线 <span class="muted" style="font-weight:400;font-size:12.5px">定时 选题→生成→质检→按档进草稿箱</span></h2>
+      <p class="sub">改配置编辑 settings.yaml 的 auto 段（enabled 即改即生效；改时间需重启服务）。⚠️ 运行时需浏览器 + Wechatsync 扩展开着，CLI 借扩展登录态发草稿。</p>
+      <div class="keyrow"><span class="kn">状态</span><span class="keyok${A.enabled?'':' miss'}"><span class="dot${A.enabled?'':' warn'}"></span>${A.enabled?'已启用':'已关闭'}</span><span class="muted" style="margin-left:12px">每天 ${escapeHtml(A.schedule||'—')} · 每次最多 ${A.count} 篇</span></div>
+      <div class="keyrow"><span class="kn">质量闸</span><span>${A.min_level==='green'?'🟢 只有绿档进草稿箱':'🟢🟡 绿黄档都进草稿箱'}<span class="muted">（红档一律拦下）</span></span></div>
+      <div class="keyrow"><span class="kn">目标平台</span><span>${(A.platforms||[]).map(p=>PN[p]||escapeHtml(p)).join('、')||'—'}</span></div>
+      <div class="keyrow"><span class="kn">限定赛道</span><span>${(A.tracks||[]).length?A.tracks.map(escapeHtml).join('、'):'不限（用当前开启的全部赛道）'}</span></div>
+      <div class="keyrow"><span class="kn">真发布</span><span class="${A.auto_publish?'keyok miss':''}">${A.auto_publish?'⚠ 开关已开（真发布功能未实现，仅提示，不会真发）':'关 · 只进草稿箱，发布仍由人把关'}</span></div>
+      <div class="keyrow"><span class="kn">最近一次</span><span class="muted">${escapeHtml(lrTxt)}</span></div>
+    </div>`;
+}
+
 function renderSettingsView(){
   const box=document.getElementById('setBody');
   if(!box||!SET.all.length) return;
@@ -479,6 +501,7 @@ function renderSettingsView(){
       </div>
       <div style="margin-top:14px">${keyRow('tavily','Tavily Key')}${keyRow('bocha','博查 Key')}</div>
     </div>
+    ${autoSecHtml()}
     <div class="set-sec">
       <h2>🎯 赛道管理 <span class="muted" style="font-weight:400;font-size:12.5px">开关 · 关键词</span></h2>
       <p class="sub">决定热点如何归类，关闭的赛道抓取时不再出现。（关键词与写作风格在 tracks.yaml 里改）</p>
