@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlowX · 界面设计 v4（桌面 · 左栏）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#AE352B; --brand-deep:#83261F; --brand-tint:#F3E4DC;
+  --paper:#F4ECDD; --surface:#FDFAF3; --surface-2:#FBF5E9;
+  --ink:#2A231E; --ink-soft:#7C7064; --ink-faint:#A99B8A;
+  --line:#E6DAC6; --line-soft:#EFE6D5;
+  --ok:#3B7A57; --ok-bg:#E8F0E9;
+  --warn:#B0801F; --warn-bg:#F6EDD6;
+  --stop:#DE3A32; --stop-bg:#FBE4E1;
+  --radius:14px; --radius-sm:9px;
+  --shadow:0 1px 2px rgba(74,50,30,.05), 0 6px 20px rgba(74,50,30,.06);
+  --disp:"Bricolage Grotesque", system-ui, sans-serif;
+  --cjk:"PingFang SC","Hiragino Sans GB","Microsoft YaHei", system-ui, sans-serif;
+  --mono:"Space Mono", ui-monospace, monospace;
+  --side-w:250px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--cjk);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+
+/* ============ 桌面骨架：左栏 + 右工作区 ============ */
+.app{display:flex;min-height:100vh}
+
+.side{width:var(--side-w);flex:none;position:sticky;top:0;height:100vh;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 16px 16px}
+.brand{display:flex;align-items:baseline;gap:9px;padding:4px 10px 22px}
+.brand .wm{font-family:var(--disp);font-weight:800;font-size:24px;letter-spacing:-.02em;color:var(--brand);line-height:1}
+.brand small{font-family:var(--cjk);font-weight:400;font-size:11.5px;letter-spacing:.04em;color:var(--ink-soft)}
+.navlabel{font-family:var(--disp);font-weight:700;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);padding:0 12px 8px}
+.navitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 12px;border:none;background:none;border-radius:11px;color:var(--ink-soft);margin-bottom:4px;position:relative;transition:.13s}
+.navitem:hover{background:var(--surface-2);color:var(--ink)}
+.navitem.on{background:var(--brand-tint);color:var(--brand-deep)}
+.navitem.on::before{content:"";position:absolute;left:-16px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+.navitem .n{font-family:var(--disp);font-weight:700;font-size:13px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);color:var(--ink-soft);flex:none;border:1px solid var(--line)}
+.navitem.on .n{background:var(--brand);color:#fff;border-color:var(--brand)}
+.navitem .tx b{display:block;font-weight:600;font-size:14.5px;line-height:1.25}
+.navitem .tx span{display:block;font-size:11px;color:var(--ink-faint)}
+.navitem.on .tx span{color:var(--brand);opacity:.75}
+.navdiv{height:1px;background:var(--line);margin:14px 6px}
+.side .foot{margin-top:auto;padding:6px 4px 0}
+.srcpill{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);padding:9px 12px;border-radius:10px;margin-bottom:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)}
+.navitem.gear .n{font-size:14px}
+
+.main{flex:1;min-width:0}
+.content{max-width:1000px;margin:0 auto;padding:32px 40px 70px}
+
+.mockbar{margin:0 auto 22px;max-width:1000px}
+.mockbar .in{background:var(--brand-tint);border:1px solid #E4C7bf;border-radius:10px;padding:9px 16px;font-size:12.5px;color:var(--brand-deep)}
+
+.view{display:none}
+.view.on{display:block}
+.viewhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.viewhead h1{font-family:var(--disp);font-weight:700;font-size:26px;margin:0;letter-spacing:-.015em}
+.viewhead p{margin:4px 0 0;color:var(--ink-soft);font-size:13.5px}
+.eyebrow{font-family:var(--disp);font-weight:700;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand);margin:0 0 4px}
+
+/* ==== 以下组件样式与 v3 一致 ==== */
+.panel{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.panel > .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+.phead .t{font-weight:600;font-size:15px}
+.phead .t .barmark{display:inline-block;width:3px;height:14px;background:var(--brand);border-radius:2px;margin-right:9px;vertical-align:-2px}
+.muted{color:var(--ink-soft);font-size:12.5px}
+
+.chips{display:flex;flex-wrap:wrap;gap:9px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:13.5px;color:var(--ink);user-select:none;transition:.12s}
+.chip:hover{border-color:var(--brand)}
+.chip.on{background:var(--brand-tint);border-color:var(--brand);color:var(--brand-deep);font-weight:600}
+.chip .sw{width:34px;height:19px;border-radius:20px;background:#DccFbb;position:relative;flex:none;transition:.15s}
+.chip .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s}
+.chip.on .sw{background:var(--brand)}
+.chip.on .sw::after{left:17px}
+.chip .badge{font-size:10.5px;color:var(--ink-faint);border:1px solid var(--line);border-radius:20px;padding:1px 7px}
+.chip.err{opacity:.75}
+.chip .badge.err{color:var(--warn);border-color:var(--warn)}
+
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;border:1px solid transparent;transition:.14s}
+.btn.primary{background:var(--brand);color:#fff}
+.btn.primary:hover{background:var(--brand-deep)}
+.btn.ghost{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.btn.ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn.sm{padding:7px 13px;font-size:12.5px;border-radius:8px}
+.btn.tool{background:var(--surface);border:1px solid var(--brand);color:var(--brand);font-weight:600}
+.btn.tool:hover{background:var(--brand);color:#fff}
+.btn:disabled{opacity:.5}
+
+.trackgroup{margin-top:6px}
+.trackhd{display:flex;align-items:center;gap:10px;margin:22px 0 10px}
+.trackhd .tk{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.02em;color:#fff;background:var(--ink);padding:3px 11px;border-radius:7px}
+.trackhd .ct{font-size:12px;color:var(--ink-soft)}
+.trackhd .ln{flex:1;height:1px;background:var(--line)}
+.topic{display:flex;align-items:center;gap:14px;padding:13px 15px;border:1px solid var(--line-soft);border-radius:11px;background:var(--surface);margin-bottom:8px;transition:.12s}
+.topic:hover{border-color:var(--line);box-shadow:var(--shadow)}
+.topic.sel{border-color:var(--brand);background:var(--brand-tint)}
+.tick{width:22px;height:22px;border-radius:6px;border:1.5px solid var(--line);flex:none;display:grid;place-items:center;color:transparent;font-size:13px;font-weight:800}
+.topic.sel .tick{background:var(--brand);border-color:var(--brand);color:#fff}
+.topic .body{flex:1;min-width:0}
+.topic .ti{font-size:15px;font-weight:600;color:var(--ink);line-height:1.4}
+.topic .meta{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.stamp{font-size:11px;color:var(--ink-soft);border:1px solid var(--line);border-radius:6px;padding:1px 8px;background:var(--surface-2)}
+.stamp.multi{color:var(--brand-deep);border-color:#E4C7bf;background:var(--brand-tint);font-weight:600}
+.heat{font-size:11.5px;color:var(--brand);font-family:var(--mono);letter-spacing:-.03em}
+.selbar{position:sticky;bottom:18px;margin-top:22px;display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--ink);color:#F4ECDD;border-radius:12px;padding:13px 20px;box-shadow:0 10px 30px rgba(42,35,30,.22)}
+.selbar b{font-family:var(--disp);font-size:16px}
+.selbar .btn.primary{background:#fff;color:var(--brand-deep)}
+.selbar .btn.primary:hover{background:var(--paper)}
+
+.cards{display:grid;grid-template-columns:1fr;gap:16px}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden;box-shadow:var(--shadow)}
+.card.red{border-color:#E6C4be;box-shadow:-3px 0 0 var(--stop) inset, var(--shadow)}
+.card .cov{height:150px;background:linear-gradient(120deg,#e9dcc7,#d8c6a9);position:relative}
+.card .cov .ck{position:absolute;inset:0;display:grid;place-items:center;color:#b09a78;font-size:12px;letter-spacing:.1em}
+.card .in{padding:16px 18px 18px}
+.card .row1{display:flex;align-items:center;gap:9px;margin-bottom:9px;flex-wrap:wrap}
+.tkmini{font-size:11px;font-weight:600;color:var(--brand-deep);background:var(--brand-tint);border-radius:6px;padding:2px 9px}
+.qc{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:20px;padding:3px 11px}
+.qc .qd{width:7px;height:7px;border-radius:50%}
+.qc.g{background:var(--ok-bg);color:var(--ok)} .qc.g .qd{background:var(--ok)}
+.qc.y{background:var(--warn-bg);color:var(--warn)} .qc.y .qd{background:var(--warn)}
+.qc.r{background:var(--stop-bg);color:var(--stop)} .qc.r .qd{background:var(--stop)}
+.delta{font-size:11.5px;font-family:var(--mono);color:var(--ok);background:var(--ok-bg);border-radius:6px;padding:1px 7px}
+.card h3{margin:2px 0 8px;font-size:17px;font-weight:700;line-height:1.35}
+.card .ex{color:var(--ink-soft);font-size:13.5px;line-height:1.7;max-height:4.9em;overflow:hidden}
+.src{margin-left:auto;font-size:11px;color:var(--ink-faint)}
+.probs{margin-top:13px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:11px 13px}
+.probs.bad{border-color:#E6C4be;background:var(--stop-bg)}
+.probs .ph{font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.probs.bad .ph{color:var(--stop)}
+.probs ul{margin:0;padding-left:18px}
+.probs li{font-size:12.5px;color:var(--ink-soft);margin:3px 0}
+.stopchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--stop);background:var(--stop-bg);border:1px solid #E6C4be;border-radius:8px;padding:5px 11px;margin-top:12px}
+.actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+.runsum{display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 18px;margin-bottom:16px;font-size:13px;flex-wrap:wrap;box-shadow:var(--shadow)}
+.runsum .k{font-family:var(--disp);font-weight:700;color:var(--ink)}
+.pipdot{display:inline-flex;align-items:center;gap:6px;color:var(--ink-soft)}
+
+.tabs{display:flex;gap:5px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+.tab{padding:10px 16px;border:none;background:none;color:var(--ink-soft);font-size:14px;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:7px}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--brand);border-color:var(--brand)}
+.tab .cnt{font-size:11px;font-family:var(--mono);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:0 7px;color:var(--ink-soft)}
+.tab.on .cnt{background:var(--brand-tint);border-color:#E4C7bf;color:var(--brand-deep)}
+.statustag{font-size:11px;font-weight:600;border-radius:6px;padding:2px 9px}
+.statustag.no{background:var(--surface-2);color:var(--ink-soft);border:1px solid var(--line)}
+.statustag.yes{background:var(--ok-bg);color:var(--ok)}
+.statustag.fix{background:var(--stop-bg);color:var(--stop)}
+
+.set-sec{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
+.set-sec h2{font-family:var(--disp);font-weight:700;font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:9px}
+.set-sec .sub{color:var(--ink-soft);font-size:12.5px;margin:0 0 16px}
+.chain{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.node{display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);padding:12px 16px;min-width:150px}
+.node .nt{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px}
+.node .nd{font-size:11.5px;color:var(--ink-soft)}
+.node.primary{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-tint)}
+.node .tag{font-size:10px;font-weight:700;letter-spacing:.06em;border-radius:5px;padding:1px 6px;text-transform:uppercase}
+.node .tag.free{background:var(--ok-bg);color:var(--ok)}
+.node .tag.paid{background:var(--warn-bg);color:var(--warn)}
+.chain .flow{color:var(--brand);font-family:var(--disp);font-weight:800;font-size:18px}
+.thresh{display:flex;gap:22px;flex-wrap:wrap;padding-top:14px;border-top:1px dashed var(--line)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;color:var(--ink-soft)}
+.field .val{display:flex;align-items:center;gap:10px}
+.field input[type=range]{accent-color:var(--brand);width:150px}
+.field .num{font-family:var(--mono);font-weight:700;color:var(--brand-deep);font-size:14px;min-width:40px}
+.keyrow{display:flex;align-items:center;gap:10px;font-size:13px;padding:8px 0;flex-wrap:wrap}
+.keyrow .kn{font-weight:600;width:90px}
+.keyok{color:var(--ok);font-size:12px;display:inline-flex;gap:5px;align-items:center}
+.trackline{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line-soft)}
+.trackline:first-of-type{border-top:none}
+.trackline .tn{font-weight:600;width:60px}
+.trackline .kw{flex:1;color:var(--ink-soft);font-size:12.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mini-sw{width:40px;height:22px;border-radius:20px;background:#DccFbb;position:relative;flex:none}
+.mini-sw.on{background:var(--brand)}
+.mini-sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+.mini-sw.on::after{left:20px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);background:var(--surface-2);border:1px dashed var(--line);border-radius:10px;padding:12px 16px;margin-top:6px}
+.legend b{color:var(--ink)}
+.swatch{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+.placeholder-note{color:var(--ink-faint);font-size:12.5px;font-style:italic}
+
+/* 收窄时把左栏压成图标条，避免又变回移动端竖排 */
+@media (max-width:880px){
+  :root{--side-w:70px}
+  .brand small,.navlabel,.navitem .tx,.side .foot .srcpill span{display:none}
+  .brand{justify-content:center;padding:4px 0 18px}
+  .navitem{justify-content:center;padding:11px 0}
+  .navitem.on::before{left:-16px}
+  .content{padding:26px 20px 60px}
+  .srcpill{justify-content:center;padding:9px 0}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ 左侧导航 ============ -->
+  <aside class="side">
+    <div class="brand"><span class="wm">FlowX</span><small>内容工作台</small></div>
+
+    <div class="navlabel">工作流</div>
+    <button class="navitem on" data-v="pick"><span class="n">1</span><span class="tx"><b>选题</b><span>抓热点 · 挑选</span></span></button>
+    <button class="navitem" data-v="make"><span class="n">2</span><span class="tx"><b>生产 · 审核</b><span>出文 · 质检 · 优化</span></span></button>
+    <button class="navitem" data-v="store"><span class="n">3</span><span class="tx"><b>稿库 · 发布</b><span>草稿 · 排版 · 发布</span></span></button>
+
+    <div class="navdiv"></div>
+    <button class="navitem gear" data-v="settings"><span class="n">⚙</span><span class="tx"><b>设置</b><span>来源 · 搜索 · 赛道 · 账号</span></span></button>
+
+    <div class="foot">
+      <div class="srcpill"><span class="dot"></span><span>热点源 7/8 在线 · 博查素材已接</span></div>
+    </div>
+  </aside>
+
+  <!-- ============ 右侧工作区 ============ -->
+  <main class="main">
+    <div class="content">
+      <div class="mockbar"><div class="in">🎨 界面设计稿 v4 · 桌面布局（左栏导航 + 宽工作区）· 沉红/米黄/暖灰 · 数据为示意</div></div>
+
+      <!-- ========== 选题 ========== -->
+      <section class="view on" id="pick">
+        <div class="viewhead">
+          <div><p class="eyebrow">Step 01 · Discover</p><h1>选题</h1><p>选好来源和赛道，抓取今天的热点，勾选要写的题</p></div>
+          <button class="btn primary" id="grabBtn">抓取今日热点 →</button>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><div class="t"><span class="barmark"></span>热点来源 <span class="muted">（勾选要抓的平台，可多选）</span></div><span class="muted">开关与聚合服务状态见「设置」</span></div>
+          <div class="chips">
+            <label class="chip on"><span class="sw"></span>百度</label>
+            <label class="chip on"><span class="sw"></span>今日头条</label>
+            <label class="chip on"><span class="sw"></span>抖音</label>
+            <label class="chip err"><span class="sw"></span>微博 <span class="badge err">上游异常</span></label>
+            <label class="chip on"><span class="sw"></span>知乎</label>
+            <label class="chip on"><span class="sw"></span>B站</label>
+            <label class="chip on"><span class="sw"></span>36氪</label>
+            <label class="chip on"><span class="sw"></span>澎湃</label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><div class="t"><span class="barmark"></span>赛道方向 <span class="muted">（开启想做的方向）</span></div></div>
+          <div class="chips">
+            <label class="chip on"><span class="sw"></span>民生</label>
+            <label class="chip on"><span class="sw"></span>科技</label>
+            <label class="chip on"><span class="sw"></span>财企</label>
+            <label class="chip on"><span class="sw"></span>体育</label>
+            <label class="chip on"><span class="sw"></span>娱乐</label>
+            <label class="chip"><span class="sw"></span>时事</label>
+            <label class="chip"><span class="sw"></span>健康</label>
+            <label class="chip"><span class="sw"></span>教育</label>
+            <label class="chip"><span class="sw"></span>历史</label>
+            <label class="chip"><span class="sw"></span>美食</label>
+          </div>
+        </div>
+
+        <div class="trackgroup">
+          <div class="trackhd"><span class="tk">科技</span><span class="ct">13 条</span><span class="ln"></span></div>
+          <div class="topic sel"><div class="tick">✓</div><div class="body"><div class="ti">日本被逼到捡垃圾：从一台旧空调挖出稀土"命脉"</div><div class="meta"><span class="stamp multi">百度 · 头条</span><span class="heat">🔥 92</span></div></div></div>
+          <div class="topic"><div class="tick">✓</div><div class="body"><div class="ti">国产大模型集体降价，API 价格战正式打响</div><div class="meta"><span class="stamp multi">百度 · 头条 · 36氪</span><span class="heat">🔥 88</span></div></div></div>
+          <div class="topic"><div class="tick">✓</div><div class="body"><div class="ti">iPhone 17 Pro 首次用上均热板，散热实测翻倍</div><div class="meta"><span class="stamp">抖音</span><span class="heat">🔥 74</span></div></div></div>
+
+          <div class="trackhd"><span class="tk">体育</span><span class="ct">11 条</span><span class="ln"></span></div>
+          <div class="topic sel"><div class="tick">✓</div><div class="body"><div class="ti">新华社：国足成绩再不好，也不能造谣</div><div class="meta"><span class="stamp multi">百度 · 头条</span><span class="heat">🔥 90</span></div></div></div>
+          <div class="topic"><div class="tick">✓</div><div class="body"><div class="ti">超强台风"巴威"可能正面登陆，浙江沿海严阵以待</div><div class="meta"><span class="stamp multi">百度 · 澎湃</span><span class="heat">🔥 85</span></div></div></div>
+
+          <div class="trackhd"><span class="tk">财企</span><span class="ct">9 条</span><span class="ln"></span></div>
+          <div class="topic"><div class="tick">✓</div><div class="body"><div class="ti">英伟达 FY27Q1 财报略超预期，AI 收入再创新高</div><div class="meta"><span class="stamp multi">知乎 · 澎湃</span><span class="heat">🔥 81</span></div></div></div>
+          <div class="topic"><div class="tick">✓</div><div class="body"><div class="ti">特朗普要求切断美国与西班牙贸易往来</div><div class="meta"><span class="stamp multi">知乎 · 澎湃</span><span class="heat">🔥 79</span></div></div></div>
+        </div>
+
+        <div class="selbar"><b id="selN">已选 2 篇</b><button class="btn primary" data-goto="make">开始生成这 2 篇 →</button></div>
+      </section>
+
+      <!-- ========== 生产 · 审核 ========== -->
+      <section class="view" id="make">
+        <div class="viewhead"><div><p class="eyebrow">Step 02 · Produce</p><h1>生产 · 审核</h1><p>自动出文 + 配图 + 质检；带问题的稿可「一键优化」定向修订</p></div></div>
+
+        <div class="runsum">
+          <span class="k">本轮 3 篇</span>
+          <span class="pipdot"><span class="dot"></span>绿 1</span>
+          <span class="pipdot"><span class="dot warn"></span>黄 1</span>
+          <span class="pipdot"><span class="dot" style="background:var(--stop)"></span>红 1（已拦入待修复）</span>
+          <span class="muted" style="margin-left:auto">素材来源：Tavily 2 · 博查 1</span>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="cov"><div class="ck">报道原图</div></div>
+            <div class="in">
+              <div class="row1"><span class="tkmini">体育</span><span class="qc g"><span class="qd"></span>质检 88</span><span class="src">百度 · 头条</span></div>
+              <h3>国足辟谣跑断腿：足协十天三次澄清，谁在造谣？</h3>
+              <p class="ex">一支球队的战绩可以被批评，但不该被编造。最近十天，中国足协连发三份澄清，起因是社交平台上几条"内部处罚名单"的截图疯传……真金白银的争议背后，是流量对情绪的收割。</p>
+              <div class="probs"><div class="ph">⚠ 质检发现的问题（请审核确认）</div><ul><li>"日本网友直接开嘲"表述略主观，建议软化为"有网友调侃"</li><li>结尾观点较强，注意与事实陈述区分</li></ul></div>
+              <div class="actions"><button class="btn tool sm">🔧 一键优化</button><button class="btn ghost sm">编辑</button></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="cov" style="background:linear-gradient(120deg,#e4d3ba,#cbb693)"><div class="ck">报道原图</div></div>
+            <div class="in">
+              <div class="row1"><span class="tkmini">科技</span><span class="qc y"><span class="qd"></span>质检 71</span><span class="src">百度 · 头条 · 36氪</span></div>
+              <h3>大模型集体降价：这场价格战，普通人能薅到什么羊毛？</h3>
+              <p class="ex">昨夜到今晨，国产大模型接连宣布 API 降价，最高降幅超过八成……对开发者是成本利好，对普通用户，短期内更可能体现在各类 AI 应用变得更便宜、更敢用。</p>
+              <div class="probs"><div class="ph">⚠ 质检发现的问题（请审核确认）</div><ul><li>"最高降幅超过八成"缺来源，建议软化为观点表述或删除</li><li>正文与标题搜图词重复度偏高，配图匹配一般</li></ul></div>
+              <div class="actions"><button class="btn tool sm">🔧 一键优化</button><button class="btn ghost sm">编辑</button></div>
+            </div>
+          </article>
+
+          <article class="card red">
+            <div class="cov" style="background:linear-gradient(120deg,#e8c9c3,#d8ada6)"><div class="ck">报道原图</div></div>
+            <div class="in">
+              <div class="row1"><span class="tkmini">财企</span><span class="qc r"><span class="qd"></span>质检 38</span><span class="src">知乎 · 澎湃</span></div>
+              <h3>英伟达财报炸裂：史上最强，营收百分之百暴涨…的</h3>
+              <p class="ex">据素材显示，英伟达本季度业绩全面碾压预期，所有分析师都看多，股价必将再创新高……</p>
+              <span class="stopchip">⛔ 已拦截 · 待修复，不进待发</span>
+              <div class="probs bad"><div class="ph">⛔ 拦截原因</div><ul><li>标题断尾（"…的"）+ 含未证实的绝对化表述</li><li>"百分之百暴涨""必将再创新高""所有分析师"——夸大/绝对化</li><li>正文出现"据素材显示"残留</li></ul></div>
+              <div class="actions"><button class="btn tool sm">🔧 一键优化</button><button class="btn ghost sm">手动修改</button><button class="btn ghost sm">换图后重检</button></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ========== 稿库 · 发布 ========== -->
+      <section class="view" id="store">
+        <div class="viewhead"><div><p class="eyebrow">Step 03 · Publish</p><h1>稿库 · 发布</h1><p>管理稿件与状态；排版、上传草稿、发布逐步接入</p></div><button class="btn ghost" id="refreshBtn">↻ 刷新</button></div>
+
+        <div class="tabs" id="tabs">
+          <button class="tab on">全部 <span class="cnt">7</span></button>
+          <button class="tab">未发 <span class="cnt">5</span></button>
+          <button class="tab">已发 <span class="cnt">1</span></button>
+          <button class="tab">待修复 <span class="cnt">1</span></button>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="cov"><div class="ck">报道原图</div></div>
+            <div class="in">
+              <div class="row1"><span class="tkmini">体育</span><span class="qc g"><span class="qd"></span>质检 90</span><span class="delta">88→90 ✅</span><span class="statustag no" style="margin-left:auto">未发</span></div>
+              <h3>国足辟谣跑断腿：足协十天三次澄清，谁在造谣？</h3>
+              <p class="ex">一支球队的战绩可以被批评，但不该被编造……（已一键优化，措辞软化、无新增来源）</p>
+              <div class="actions"><button class="btn primary sm">发布…</button><button class="btn ghost sm">编辑</button></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="cov" style="background:linear-gradient(120deg,#dfe0d2,#c6c9b1)"><div class="ck">报道原图</div></div>
+            <div class="in">
+              <div class="row1"><span class="tkmini">民生</span><span class="qc y"><span class="qd"></span>质检 76</span><span class="statustag no" style="margin-left:auto">未发</span></div>
+              <h3>超强台风"巴威"逼近：浙江沿海如何提前应对？</h3>
+              <p class="ex">中央气象台已发布橙色预警，"巴威"或于近日正面登陆……</p>
+              <div class="actions"><button class="btn primary sm">发布…</button><button class="btn ghost sm">编辑</button></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="cov"><div class="ck">— 无配图 —</div></div>
+            <div class="in">
+              <div class="row1"><span class="tkmini">科技</span><span class="qc" style="background:var(--surface-2);color:var(--ink-faint)"><span class="qd" style="background:var(--ink-faint)"></span>质检 待接入</span><span class="statustag yes" style="margin-left:auto">已发</span></div>
+              <h3>日本被逼到捡垃圾：从一台旧空调挖出稀土"命脉"</h3>
+              <p class="ex">（早期入库的稿件，未经新版质检，兼容显示）</p>
+              <div class="actions"><button class="btn ghost sm">查看链接</button></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ========== 设置 ========== -->
+      <section class="view" id="settings">
+        <div class="viewhead"><div><p class="eyebrow">Configuration</p><h1>设置</h1><p>设一次、偶尔调；日常工作流里不再出现这些开关</p></div></div>
+
+        <div class="set-sec">
+          <h2>🛰 热点来源</h2>
+          <p class="sub">开关各平台热榜。抖音/微博/知乎/B站/36氪/澎湃 由本机聚合服务提供；百度/头条为官方直抓，服务离线也能出。</p>
+          <div class="keyrow"><span class="kn">聚合服务</span><span class="keyok"><span class="dot"></span>DailyHotApi 运行中 · 127.0.0.1:6688</span><span class="muted" style="margin-left:auto">停止时百度/头条不受影响</span></div>
+          <div class="chips" style="margin-top:12px">
+            <label class="chip on"><span class="sw"></span>百度 <span class="badge">直抓</span></label>
+            <label class="chip on"><span class="sw"></span>今日头条 <span class="badge">直抓</span></label>
+            <label class="chip on"><span class="sw"></span>抖音</label>
+            <label class="chip err"><span class="sw"></span>微博 <span class="badge err">上游异常</span></label>
+            <label class="chip on"><span class="sw"></span>知乎</label>
+            <label class="chip on"><span class="sw"></span>B站</label>
+            <label class="chip on"><span class="sw"></span>36氪</label>
+            <label class="chip on"><span class="sw"></span>澎湃</label>
+          </div>
+        </div>
+
+        <div class="set-sec">
+          <h2>🔎 搜索素材 <span class="muted" style="font-weight:400;font-size:12.5px">给文章喂原料 · 自动按顺序，不用手选</span></h2>
+          <p class="sub">优先用免费的 Tavily；结果太少/太薄/报错时自动回退博查。既保效果又控成本。</p>
+          <div class="chain">
+            <div class="node primary"><div class="nt">Tavily <span class="tag free">免费优先</span></div><div class="nd">每月 1000 次 · 先用它</div></div>
+            <span class="flow">→</span>
+            <div class="node"><div class="nt">博查 <span class="tag paid">付费兜底</span></div><div class="nd">仅当 Tavily 不达标时启用</div></div>
+          </div>
+          <div class="thresh">
+            <div class="field"><label>回退触发 · 最少条数</label><div class="val"><input type="range" min="1" max="10" value="3"><span class="num">3</span></div></div>
+            <div class="field"><label>回退触发 · 素材最少字数</label><div class="val"><input type="range" min="100" max="1500" value="300" step="50"><span class="num">300</span></div></div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="keyrow"><span class="kn">Tavily Key</span><span class="keyok"><span class="dot"></span>已配置 · sk-••••</span></div>
+            <div class="keyrow"><span class="kn">博查 Key</span><span class="keyok"><span class="dot"></span>已配置 · sk-••••</span></div>
+          </div>
+        </div>
+
+        <div class="set-sec">
+          <h2>🎯 赛道管理 <span class="muted" style="font-weight:400;font-size:12.5px">开关 · 关键词 · 写作风格</span></h2>
+          <p class="sub">决定热点如何归类、每类用什么口吻写。</p>
+          <div class="trackline"><span class="tn">民生</span><span class="kw">养老金 · 社保 · 物价 · 医保 · 房价 · 就业</span><span class="mini-sw on"></span></div>
+          <div class="trackline"><span class="tn">科技</span><span class="kw">AI · 大模型 · 芯片 · 新能源 · 手机 · 互联网</span><span class="mini-sw on"></span></div>
+          <div class="trackline"><span class="tn">财企</span><span class="kw">财报 · 股市 · 融资 · 上市 · 企业 · 经济</span><span class="mini-sw on"></span></div>
+          <div class="trackline"><span class="tn">体育</span><span class="kw">国足 · 世界杯 · 篮球 · 奥运 · 电竞</span><span class="mini-sw on"></span></div>
+          <div class="trackline"><span class="tn">健康</span><span class="kw">养生 · 疾病 · 医疗 · 饮食 · 心理</span><span class="mini-sw"></span></div>
+        </div>
+
+        <div class="set-sec">
+          <h2>👤 账号与平台 <span class="muted" style="font-weight:400;font-size:12.5px">多平台 · 多账号</span></h2>
+          <p class="sub">今日头条 / 百家号 / 小红书 / X …，每个平台可管理多个账号。</p>
+          <p class="placeholder-note">规划中：随「发布」功能一起接入（1c-2 及之后）。届时在此登录账号、管理登录态。</p>
+        </div>
+
+        <div class="set-sec" style="background:var(--surface-2)">
+          <h2 style="font-size:14px">🎨 配色约定（设计说明）</h2>
+          <div class="legend">
+            <span><span class="swatch" style="background:var(--brand)"></span><b>品牌砖红</b>：只用于外壳——导航、按钮、强调</span>
+            <span><span class="swatch" style="background:var(--stop)"></span><b>告警红</b>：只用于"红档/拦截"，更亮 + 配 ⛔ 图标</span>
+            <span><span class="swatch" style="background:var(--ok)"></span>质检合格</span>
+            <span><span class="swatch" style="background:var(--warn)"></span>质检待确认</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  const views=document.querySelectorAll('.view');
+  const items=document.querySelectorAll('.navitem');
+  function show(v){
+    views.forEach(x=>x.classList.toggle('on',x.id===v));
+    items.forEach(s=>s.classList.toggle('on',s.dataset.v===v));
+    window.scrollTo({top:0});
+  }
+  items.forEach(s=>s.addEventListener('click',()=>show(s.dataset.v)));
+  document.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.goto)));
+  document.getElementById('grabBtn')?.addEventListener('click',()=>document.querySelector('.trackgroup').scrollIntoView({behavior:'smooth'}));
+
+  document.querySelectorAll('.chip').forEach(c=>{ if(c.querySelector('.badge.err'))return; c.addEventListener('click',()=>c.classList.toggle('on')); });
+
+  const selN=document.getElementById('selN');
+  function recount(){
+    const n=document.querySelectorAll('#pick .topic.sel').length;
+    if(selN)selN.textContent='已选 '+n+' 篇';
+    document.querySelectorAll('[data-goto="make"]').forEach(b=>b.textContent='开始生成这 '+n+' 篇 →');
+  }
+  document.querySelectorAll('#pick .topic').forEach(t=>t.addEventListener('click',()=>{t.classList.toggle('sel');recount();}));
+  document.querySelectorAll('#tabs .tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');}));
+</script>
+</body>
+</html>
