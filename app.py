@@ -228,6 +228,47 @@ def revise_article(req: ReviseRequest):
     return {"ok": True, "id": new_id, "status": status, "before": before, **new_item}
 
 
+class ReimageRequest(BaseModel):
+    id: str
+
+
+@app.post("/reimage")
+def reimage_article(req: ReimageRequest):
+    """一键换图：取该稿候选池里下一张有效报道图；候选用尽退回 Pexels。
+    只换 image / image_idx，其它字段（qc_*、status、created_at）原样保留，不触发重新质检。
+    失败 {ok:false} 且不动原稿。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == req.id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+
+    try:
+        pool = json.loads(art.get("img_candidates") or "[]")
+    except Exception:
+        pool = []
+    idx = art.get("image_idx")
+    idx = -1 if idx is None else int(idx)
+
+    def _save_with(image_rel: str, new_idx: int, source: str):
+        art["image"], art["image_idx"] = image_rel, new_idx
+        art["img_candidates"] = json.dumps(pool, ensure_ascii=False) if pool else None
+        art["time"] = art.get("created_at")
+        store.save_article(art, art["status"])
+        return {"ok": True, "id": req.id, "image": image_rel, "source": source, "idx": new_idx}
+
+    # 依次试候选池里下一张
+    for i in range(idx + 1, len(pool)):
+        data = download_valid_image(pool[i])
+        if data:
+            rel = save_image_bytes(data, art["title"] + pool[i])
+            return _save_with(rel, i, "report")
+
+    # 候选用尽 → Pexels 兜底
+    rel = pick_cover(art["title"], art.get("body") or "")
+    if rel:
+        return _save_with(rel, len(pool), "pexels")
+    return {"ok": False, "error": "候选报道图已用尽，Pexels 兜底也没出图（检查 PEXELS_API_KEY），原图保留"}
+
+
 class PublishRequest(BaseModel):
     id: str
     account: str | None = None

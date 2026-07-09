@@ -462,12 +462,13 @@ function cardHtml(a, mode, delta){
   // 一键优化：有质检问题（或红档）才出现
   const optBtn=(q.probs.length||q.red)
     ?`<button class="btn tool sm" onclick="optimizeArticle('${escapeHtml(a.id||'')}',this)" title="按质检问题定向修订并自动重检">🔧 一键优化</button>`:'';
-  const holders= mode==='gen' ? (q.red?['手动修改','换图后重检']:['编辑'])
+  const reimgBtn=`<button class="btn ghost sm" onclick="reimageArticle('${escapeHtml(a.id||'')}',this)" title="换成下一张候选报道图；候选用尽退回图库。只换图，不重新质检">🔄 换图</button>`;
+  const holders= mode==='gen' ? (q.red?['手动修改']:['编辑'])
                : k==='fix' ? ['重新生成','手动修改']
                : k==='no' ? ['发布…','编辑']
                : k==='yes' ? ['查看链接'] : [];
   const solidFirst=(mode==='pub'&&k==='no');
-  const act=(optBtn||holders.length)?`<div class="actions">${optBtn}${phBtns(holders,solidFirst)}</div>`:'';
+  const act=`<div class="actions">${optBtn}${reimgBtn}${phBtns(holders,solidFirst)}</div>`;
   const stopchip=q.red?`<span class="stopchip">⛔ 已拦截 · 待修复，不进待发</span>`:'';
   return `<article class="card${q.red?' red':''}" data-id="${escapeHtml(a.id||'')}" data-s="${k}">${covHtml(a.image)}<div class="in">
       <div class="row1"><span class="tkmini">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}${right}</div>
@@ -504,6 +505,33 @@ async function optimizeArticle(id, btn){
       card.querySelector('.in').appendChild(note);
     }
     note.textContent='⚠ 优化失败，原稿保留：'+e.message;
+  }
+}
+
+// 一键换图：POST /reimage → 只更新这张卡的封面图（不重渲整卡、不动质检徽章）
+async function reimageArticle(id, btn){
+  const card=btn.closest('.card');
+  const orig=btn.textContent;
+  btn.disabled=true; btn.textContent='⏳ 换图中…';
+  try{
+    const res=await fetch('/reimage',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id})});
+    if(!res.ok) throw new Error('请求失败：'+res.status);
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'未知错误');
+    const cov=card.querySelector('.cov');
+    if(cov) cov.innerHTML=`<img src="/output/${escapeHtml(data.image)}?t=${Date.now()}" alt="配图" onerror="this.parentNode.textContent='配图加载失败'">`;
+    const note=card.querySelector('.optErr'); if(note) note.remove();
+  }catch(e){
+    let note=card.querySelector('.optErr');
+    if(!note){
+      note=document.createElement('div');
+      note.className='optErr';
+      card.querySelector('.in').appendChild(note);
+    }
+    note.textContent='⚠ 换图失败，原图保留：'+e.message;
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
   }
 }
 
