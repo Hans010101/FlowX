@@ -22,6 +22,7 @@ from config import load_env, load_settings, enabled_tracks, get_account
 from hotspot import fetch_all, classify
 from generate import write, pick_cover
 from generate.illustrate import scrape_cover
+from generate.revise import revise
 from research import search_results, build_material
 from publishers import get_publisher, Article
 from quality import quality_check
@@ -174,6 +175,43 @@ def recheck_article(req: RecheckRequest):
 def get_articles(limit: int = 500):
     """取稿件库里的稿件（新→旧）。"""
     return {"articles": store.all_articles(limit=limit)}
+
+
+class ReviseRequest(BaseModel):
+    id: str
+
+
+@app.post("/revise")
+def revise_article(req: ReviseRequest):
+    """一键定向优化：按稿件已存的质检问题清单二次修订 → 重新质检 → 入库。
+    标题变了 id 跟着变（id=md5(title)）：先存新行、再删旧行，是"移动"不是"复制"。
+    revise 失败则原稿原样保留，只返回 ok:false。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == req.id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+
+    try:
+        problems = json.loads(art.get("qc_problems") or "[]")
+    except Exception:
+        problems = []
+    before = {"qc_score": art.get("qc_score"), "qc_level": art.get("qc_level")}
+
+    try:
+        revised = revise(art, problems)
+    except Exception as e:
+        return {"ok": False, "error": f"优化失败，原稿保留：{e}"}
+
+    new_item = {
+        "title": revised.title, "body": revised.content, "image": art.get("image"),
+        "track": art.get("track", ""), "source": art.get("source", ""),
+        "time": art.get("created_at"),  # 沿用原创建时间
+    }
+    status = _apply_qc(new_item)
+    store.save_article(new_item, status)
+    new_id = _aid(new_item["title"])
+    if new_id != req.id:
+        store.delete_article(req.id)
+    return {"ok": True, "id": new_id, "status": status, "before": before, **new_item}
 
 
 class PublishRequest(BaseModel):

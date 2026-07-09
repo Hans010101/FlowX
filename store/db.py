@@ -73,6 +73,16 @@ def save_article(item: dict, status: str = "未发"):
         conn.close()
 
 
+def delete_article(article_id: str):
+    """按 id 删一篇（/revise 改标题时旧 id 行要移除，避免留重复稿）。"""
+    conn = _conn()
+    try:
+        conn.execute("DELETE FROM articles WHERE id=?", (article_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def set_status(title: str, status: str):
     conn = _conn()
     try:
