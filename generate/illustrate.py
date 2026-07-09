@@ -115,7 +115,7 @@ def pick_cover(title: str, body: str = "", out_dir: str = "output/images") -> st
 # 产出：有序候选池（主图=第一张有效的），其余留给 /reimage「换图」依次用。
 import re
 import struct
-from urllib.parse import urljoin
+from urllib.parse import urljoin, unquote
 
 MIN_BYTES = 15000               # <15KB 多半是logo/缩略图
 MAX_BYTES = 20 * 1024 * 1024    # 20M 上限（头条限制）
@@ -131,8 +131,10 @@ _OG_PATTERNS = [
 _IMG_URL_BAD = re.compile(
     r'(?:^|[/_\-.])(logos?|icons?|avatars?|sprites?|placeholder|banners?|ads?|adv|'
     r'qrcode|favicon|spacer|blank|default|btn|button|emoji|watermark)(?=$|[/_\-.@?])', re.I)
-_IMG_TAG_RE = re.compile(
-    r'<img[^>]+(?:data-original|data-src|src)=["\'](https?://[^"\']+?\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', re.I)
+_IMG_FULLTAG_RE = re.compile(r"<img\b[^>]*>", re.I)
+_IMG_SRC_RE = re.compile(
+    r'(?:data-original|data-src|src)=["\'](https?://[^"\']+?\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', re.I)
+_IMG_ALT_RE = re.compile(r'alt=["\']([^"\']*)["\']', re.I)
 
 
 def _img_size(data: bytes) -> tuple[int, int] | None:
@@ -176,29 +178,47 @@ def _region(html: str, tag: str) -> str:
     return m.group(1) if m else ""
 
 
-def _page_candidates(html: str, base_url: str) -> list[str]:
-    """单个页面的有序候选：og/twitter → article/main 区内图 → 其它正文图；过 URL 黑名单、去重。"""
+def _imgs_in(seg: str) -> list[tuple[str, str]]:
+    """片段里的 (图片URL, alt文本) 列表。"""
+    out = []
+    for tag in _IMG_FULLTAG_RE.findall(seg):
+        m = _IMG_SRC_RE.search(tag)
+        if not m:
+            continue
+        alt = _IMG_ALT_RE.search(tag)
+        out.append((m.group(1), (alt.group(1).strip() if alt else "")))
+    return out
+
+
+def _page_candidates(html: str, base_url: str) -> list[dict]:
+    """单个页面的有序候选 {url, alt, og}：og/twitter → article/main 区内图 → 其它正文图；
+    过 URL 黑名单、去重（重复 URL 的 alt 取非空的那份）。"""
     ordered = []
     for pat in _OG_PATTERNS:
         for m in re.finditer(pat, html, re.I):
-            ordered.append(urljoin(base_url, m.group(1).strip()))
+            ordered.append({"url": urljoin(base_url, m.group(1).strip()), "alt": "", "og": True})
     for region_tag in ("article", "main"):
         seg = _region(html, region_tag)
         if seg:
-            ordered.extend(m.group(1) for m in _IMG_TAG_RE.finditer(seg))
+            ordered.extend({"url": u, "alt": a, "og": False} for u, a in _imgs_in(seg))
             break
-    ordered.extend(m.group(1) for m in _IMG_TAG_RE.finditer(html))
-    out, seen = [], set()
-    for u in ordered:
-        if not u.startswith("http") or u in seen or _IMG_URL_BAD.search(u):
+    ordered.extend({"url": u, "alt": a, "og": False} for u, a in _imgs_in(html))
+    out, seen = [], {}
+    for c in ordered:
+        u = c["url"]
+        if not u.startswith("http") or _IMG_URL_BAD.search(u):
             continue
-        seen.add(u)
-        out.append(u)
+        if u in seen:
+            if c["alt"] and not seen[u]["alt"]:
+                seen[u]["alt"] = c["alt"]
+            continue
+        seen[u] = c
+        out.append(c)
     return out[:12]
 
 
-def collect_candidates(urls: list[str]) -> list[str]:
-    """按报道链接顺序收集全部候选图 URL（有序去重）。"""
+def collect_candidates(urls: list[str]) -> list[dict]:
+    """按报道链接顺序收集全部候选 {url, alt, og}（有序去重）。"""
     out, seen = [], set()
     for url in urls[:5]:
         if not url:
@@ -208,11 +228,42 @@ def collect_candidates(urls: list[str]) -> list[str]:
             r.raise_for_status()
         except Exception:
             continue
-        for iu in _page_candidates(r.text, url):
-            if iu not in seen:
-                seen.add(iu)
-                out.append(iu)
+        for c in _page_candidates(r.text, url):
+            if c["url"] not in seen:
+                seen.add(c["url"])
+                out.append(c)
     return out
+
+
+# —— 语义弱排序：候选与标题的关键词重合度（alt 文本 + URL 解码），og 图给基础分保持领先 ——
+def _title_keywords(title: str) -> set[str]:
+    """标题 → 关键词集：英文/数字 token（≥3位且非纯数字）+ 中文 2 字滑窗。"""
+    kws = set()
+    for tok in re.split(r"[\W_]+", title):
+        if not tok:
+            continue
+        if re.fullmatch(r"[A-Za-z0-9]+", tok):
+            tok = tok.lower()
+            if len(tok) >= 3 and not tok.isdigit():   # 短数字串会误配 URL 哈希，丢弃
+                kws.add(tok)
+        else:
+            for i in range(len(tok) - 1):
+                sh = tok[i:i + 2]
+                if not sh.isascii():
+                    kws.add(sh)
+    return kws
+
+
+def _relevance(cand: dict, kws: set[str]) -> int:
+    hay = (cand.get("alt") or "") + " " + unquote(cand["url"]).lower()
+    score = sum(1 for k in kws if k in hay)
+    return score + (1 if cand.get("og") else 0)   # og 是编辑选的封面，基础分保持主图优先
+
+
+def rank_candidates(cands: list[dict], title: str) -> list[dict]:
+    """稳定排序：按相关度降序，同分保持原有优先级顺序（og→正文区→其它 × 报道页顺序）。"""
+    kws = _title_keywords(title)
+    return sorted(cands, key=lambda c: -_relevance(c, kws))
 
 
 def download_valid_image(iu: str) -> bytes | None:
@@ -247,13 +298,15 @@ def save_image_bytes(data: bytes, key: str, out_dir: str = "output/images") -> s
 def scrape_cover_pool(urls: list[str], title: str = "",
                       out_dir: str = "output/images") -> tuple[str | None, list[str], int]:
     """抓报道配图：返回 (主图相对路径|None, 有序候选URL池, 主图在池中的索引|-1)。
-    主图 = 优先级排序后第一张通过校验的候选（不再"挑最大"）。"""
-    pool = collect_candidates(urls)
-    for i, iu in enumerate(pool):
-        data = download_valid_image(iu)
+    候选池入库前先按与标题的相关度弱排序（alt/URL 关键词重合，og 领先），
+    主图 = 排序后第一张通过校验的候选，/reimage 按此顺序取即相关度优先。"""
+    cands = rank_candidates(collect_candidates(urls), title)
+    pool = [c["url"] for c in cands]
+    for i, c in enumerate(cands):
+        data = download_valid_image(c["url"])
         if data:
-            rel = save_image_bytes(data, title + iu, out_dir)
-            print(f"  抓到报道配图（{len(data) // 1024}KB，候选第{i + 1}/{len(pool)}张：{iu[:50]}...）")
+            rel = save_image_bytes(data, title + c["url"], out_dir)
+            print(f"  抓到报道配图（{len(data) // 1024}KB，候选第{i + 1}/{len(pool)}张：{c['url'][:50]}...）")
             return rel, pool, i
     print(f"  ⚠️ 没抓到合适的报道配图（候选{len(pool)}张均未过校验，将留空，可换图/手动配）")
     return None, pool, -1
