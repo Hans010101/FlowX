@@ -89,6 +89,21 @@ def set_hotspot_sources(sources: list[str], path: str = "settings.yaml"):
     _dump_fallback(path, data)
 
 
+def set_research_thresholds(min_results: int, min_chars: int, path: str = "settings.yaml"):
+    """写回搜索兜底链阈值（只改 research 段那两行的数字，注释与其它内容原样保留）。"""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    t1, n1 = re.subn(r"(?m)^(\s*min_results:\s*)\d+", lambda m: m.group(1) + str(min_results), text, count=1)
+    t2, n2 = re.subn(r"(?m)^(\s*min_chars:\s*)\d+", lambda m: m.group(1) + str(min_chars), t1, count=1)
+    if n1 == 1 and n2 == 1 and _write_validated(
+            path, t2, lambda d: (d.get("research", {}).get("min_results") == min_results
+                                 and d.get("research", {}).get("min_chars") == min_chars)):
+        return
+    data = _load(path)
+    data.setdefault("research", {}).update(min_results=min_results, min_chars=min_chars)
+    _dump_fallback(path, data)
+
+
 def set_track_enabled(key: str, enabled: bool, path: str = "tracks.yaml"):
     """改 tracks.yaml 里某赛道的 enabled，keywords/prompt/注释原样保留。"""
     with open(path, "r", encoding="utf-8") as f:

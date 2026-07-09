@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from config import (load_env, load_settings, enabled_tracks, get_account,
-                    load_tracks, set_hotspot_sources, set_track_enabled)
+                    load_tracks, set_hotspot_sources, set_track_enabled, set_research_thresholds)
 from hotspot import fetch_all, classify
 from generate import write, pick_cover
 from generate.illustrate import scrape_cover_pool, download_valid_image, save_image_bytes
@@ -410,6 +410,20 @@ def post_settings_sources(req: SourcesRequest):
         raise HTTPException(status_code=400, detail="至少保留一个热点来源")
     set_hotspot_sources(sources)
     return {"ok": True, "sources": sources}
+
+
+class ResearchThresholdsRequest(BaseModel):
+    min_results: int
+    min_chars: int
+
+
+@app.post("/settings/research")
+def post_settings_research(req: ResearchThresholdsRequest):
+    """写回搜索兜底链阈值。越界钳制到合理范围（min_results 1~10、min_chars 100~1500）。"""
+    mr = max(1, min(10, req.min_results))
+    mc = max(100, min(1500, req.min_chars))
+    set_research_thresholds(mr, mc)
+    return {"ok": True, "min_results": mr, "min_chars": mc}
 
 
 class TrackToggleRequest(BaseModel):

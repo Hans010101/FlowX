@@ -392,6 +392,23 @@ async function toggleSource(code){
   }
 }
 
+// 搜索阈值滑块：拖动实时显数，change 写回 settings.yaml（后端钳制范围）
+async function saveResearchThresholds(el){
+  const box=el.closest('.thresh');
+  const [mr,mc]=[...box.querySelectorAll('input[type=range]')].map(i=>parseInt(i.value,10));
+  try{
+    const res=await fetch('/settings/research',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({min_results:mr, min_chars:mc})});
+    const d=await res.json();
+    if(!res.ok||!d.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    if(SET.research){ SET.research.min_results=d.min_results; SET.research.min_chars=d.min_chars; }
+    toast(`搜索回退阈值已保存：<${d.min_results}条 或 <${d.min_chars}字 时回退博查`);
+  }catch(e){
+    toast('保存失败：'+e.message);
+    loadSettingsData();   // 失败回读真实值
+  }
+}
+
 async function toggleTrack(key, el){
   const to=!el.classList.contains('on');
   el.classList.toggle('on',to);   // 乐观更新，失败回滚
@@ -434,8 +451,8 @@ function renderSettingsView(){
       <p class="sub">优先用免费的 Tavily；结果太少/太薄/报错时自动回退博查。既保效果又控成本。</p>
       <div class="chain">${provNodes}</div>
       <div class="thresh">
-        <div class="field"><label>回退触发 · 最少条数</label><div class="val"><input type="range" min="1" max="10" value="${R.min_results}" disabled title="在 settings.yaml 的 research.min_results 修改（界面写回后续接入）"><span class="num">${R.min_results}</span></div></div>
-        <div class="field"><label>回退触发 · 素材最少字数</label><div class="val"><input type="range" min="100" max="1500" step="50" value="${R.min_chars}" disabled title="在 settings.yaml 的 research.min_chars 修改（界面写回后续接入）"><span class="num">${R.min_chars}</span></div></div>
+        <div class="field"><label>回退触发 · 最少条数</label><div class="val"><input type="range" min="1" max="10" value="${R.min_results}" oninput="this.parentNode.querySelector('.num').textContent=this.value" onchange="saveResearchThresholds(this)" title="Tavily 结果少于此条数 → 回退博查"><span class="num">${R.min_results}</span></div></div>
+        <div class="field"><label>回退触发 · 素材最少字数</label><div class="val"><input type="range" min="100" max="1500" step="50" value="${R.min_chars}" oninput="this.parentNode.querySelector('.num').textContent=this.value" onchange="saveResearchThresholds(this)" title="素材总字数低于此 → 回退博查"><span class="num">${R.min_chars}</span></div></div>
       </div>
       <div style="margin-top:14px">${keyRow('tavily','Tavily Key')}${keyRow('bocha','博查 Key')}</div>
     </div>
