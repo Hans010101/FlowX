@@ -23,7 +23,7 @@ from hotspot import fetch_all, classify
 from generate import write, pick_cover
 from generate.illustrate import scrape_cover
 from generate.revise import revise
-from research import search_results, build_material
+from research import search_results, build_material, search_with_fallback
 from publishers import get_publisher, Article
 from quality import quality_check
 import store
@@ -112,7 +112,9 @@ def generate_articles(req: GenerateRequest):
     settings = load_settings()
     hconf = settings.get("hotspot", {})
     iconf = settings.get("image", {})
-    research_provider = settings.get("research", {}).get("provider", "tavily")
+    rconf = settings.get("research", {})
+    research_providers = rconf.get("providers") or []   # 兜底链；空则退回单一 provider（兼容旧配置）
+    research_provider = rconf.get("provider", "tavily")
     research_count = hconf.get("research_count", 5)
     skip_img_tracks = set(iconf.get("skip_tracks", []))
     img_mode = iconf.get("mode", "scrape")
@@ -125,7 +127,13 @@ def generate_articles(req: GenerateRequest):
             results.append({"ok": False, "title": item.title, "error": f"赛道『{item.track_key}』未启用或不存在"})
             continue
         try:
-            search_res = search_results(item.title, count=research_count, provider=research_provider)
+            if research_providers:
+                search_res, used_provider = search_with_fallback(
+                    item.title, count=research_count, providers=research_providers,
+                    min_results=rconf.get("min_results", 3), min_chars=rconf.get("min_chars", 300))
+                print(f"  🔍 [{item.title[:20]}] 素材来源：{used_provider}（{len(search_res)}条）")
+            else:
+                search_res = search_results(item.title, count=research_count, provider=research_provider)
             material = build_material(search_res)
             article = write(item.title, track_conf["prompt"], material=material)
         except Exception as e:

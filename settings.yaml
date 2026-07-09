@@ -38,4 +38,9 @@ hotspot:
   research_count: 5
 
 research:
-  provider: tavily          # 免费搜索，注册 https://tavily.com
+  # 搜索源兜底链：依次尝试，第一个结果够好就用（tavily 免费额度优先，省成本）；
+  # 不达标（条数<min_results 或素材总字数<min_chars）自动回退下一个（bocha 付费、内容更全）
+  providers: [tavily, bocha]
+  min_results: 3               # 少于这么多条 → 回退
+  min_chars: 300               # 素材总字数低于此 → 回退
+  provider: bocha              # 兼容：仅当没配 providers 时用这个单一源
