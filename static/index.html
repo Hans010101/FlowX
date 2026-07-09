@@ -110,9 +110,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,
 .topic.sel{border-color:var(--brand);background:var(--brand-tint)}
 .tick{width:22px;height:22px;border-radius:6px;border:1.5px solid var(--line);flex:none;display:grid;place-items:center;color:transparent;font-size:13px;font-weight:800}
 .topic.sel .tick{background:var(--brand);border-color:var(--brand);color:#fff}
-.topic .body{flex:1;min-width:0}
-.topic .ti{font-size:15px;font-weight:600;color:var(--ink);line-height:1.4}
-.topic .meta{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.topic .ti{flex:1;min-width:0;font-size:15px;font-weight:600;color:var(--ink);line-height:1.4}
+.topic .meta{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:wrap;justify-content:flex-end;max-width:42%}
 .stamp{font-size:11px;color:var(--ink-soft);border:1px solid var(--line);border-radius:6px;padding:1px 8px;background:var(--surface-2)}
 .stamp.multi{color:var(--brand-deep);border-color:#E4C7bf;background:var(--brand-tint);font-weight:600}
 .heat{font-size:11.5px;color:var(--brand);font-family:var(--mono);letter-spacing:-.03em}
@@ -568,25 +567,26 @@ function renderHotspots(data){
   const trackEntries=Object.entries(data.tracks||{});
   let html='';
   if(trackEntries.length){
-    html+=trackEntries.map(([key,g])=>`
-      <div class="trackhd"><span class="tk">${escapeHtml(g.name)}</span><span class="ct">${g.items.length} 条</span><span class="ln"></span></div>
-      ${g.items.map(it=>{
+    html+=trackEntries.map(([key,g])=>{
+      const items=g.items.slice(0,10);   // ② 每赛道单次最多展示 10 条，计数按实际展示
+      return `
+      <div class="trackhd"><span class="tk">${escapeHtml(g.name)}</span><span class="ct">${items.length} 条</span><span class="ln"></span></div>
+      ${items.map(it=>{
         const srcs=(it.sources&&it.sources.length?it.sources:[it.source||'']);
         const srcTxt=srcs.map(srcLabel).join('、');
         // 热度：有真实值显示数值（头条/聚合源有，百度无此数据）；多来源没数值时退回平台数
         const heat=it.hot?`<span class="heat">🔥 ${fmtHot(it.hot)}${srcs.length>1?` · ${srcs.length}平台`:''}</span>`
                   :(srcs.length>1?`<span class="heat">🔥 ${srcs.length} 平台同热</span>`:'');
+        // ① 来源/热度放标题右侧同一行，不再占独立一行
         return `
         <div class="topic" tabindex="0" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
           <div class="tick">✓</div>
-          <div class="body">
-            <div class="ti">${escapeHtml(it.title)}</div>
-            <div class="meta"><span class="stamp${srcs.length>1?' multi':''}">${srcs.map(srcLabel).join(' · ')}</span>${heat}</div>
-          </div>
-        </div>`}).join('')}`).join('');
+          <div class="ti">${escapeHtml(it.title)}</div>
+          <div class="meta"><span class="stamp${srcs.length>1?' multi':''}">${srcs.map(srcLabel).join(' · ')}</span>${heat}</div>
+        </div>`}).join('')}`}).join('');
   }
   if(data.unclassified && data.unclassified.length){
-    html+=`<div class="trackhd"><span class="tk" style="background:var(--ink-faint)">未分类</span><span class="ct">${data.unclassified.length} 条（未命中已开启赛道，不参与生成）</span><span class="ln"></span></div>`;
+    html+=`<div class="trackhd unclassified"><span class="tk" style="background:var(--ink-faint)">未分类</span><span class="ct">${data.unclassified.length} 条（未命中已开启赛道，不参与生成）</span><span class="ln"></span></div>`;
   }
   box.innerHTML=html || '<div class="placeholder-note" style="padding:10px 4px">没抓到能归类的热点，换个时间再试试</div>';
   document.getElementById('selbar').style.display=trackEntries.length?'flex':'none';
@@ -606,6 +606,7 @@ function collectSelected(){
 async function generateArticles(){
   const items=collectSelected();
   if(!items.length){ alert('还没有勾选热点，先在列表里勾选想写的选题'); return; }
+  const selEls=[...document.querySelectorAll('#pick .topic.sel')];   // 与 items 同序，供生成后移除
   const btn=document.getElementById('genBtn');
   btn.disabled=true; btn.textContent=`生成中 ...（共 ${items.length} 篇，搜索素材+出文+配图+质检，请耐心等待）`;
   try{
@@ -616,12 +617,28 @@ async function generateArticles(){
     if(!res.ok) throw new Error('请求失败：'+res.status);
     const data=await res.json();
     renderGenerated(data.results||[]);
+    // ③ 生成成功的热点已变成稿件，从选题列表即时移除（后端按提交顺序逐条返回，序号一一对应）
+    (data.results||[]).forEach((r,i)=>{ if(r.ok) selEls[i]?.remove(); });
+    refreshGroupCounts();
     show('make');
   }catch(e){
     alert('生成失败：'+e.message);
   }finally{
     btn.disabled=false; updateSelectedBar();
   }
+}
+
+// 移除热点后刷新各赛道组头计数；组内条目清零则连组头一并移除（未分类组头不参与）
+function refreshGroupCounts(){
+  document.querySelectorAll('#hotspotGroups .trackhd:not(.unclassified)').forEach(hd=>{
+    let n=0, el=hd.nextElementSibling;
+    while(el && !el.classList.contains('trackhd')){
+      if(el.classList.contains('topic')) n++;
+      el=el.nextElementSibling;
+    }
+    if(n===0) hd.remove();
+    else { const ct=hd.querySelector('.ct'); if(ct) ct.textContent=`${n} 条`; }
+  });
 }
 
 // ================= 质检信息与卡片公共件（生产页/稿库页共用）=================
