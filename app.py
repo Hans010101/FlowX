@@ -15,9 +15,12 @@ import os
 import time
 
 import html as html_escape_mod
+import re
+import subprocess
+import tempfile
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -220,21 +223,112 @@ _ARTICLE_PAGE = """<!DOCTYPE html>
 </html>"""
 
 
+def _article_html(art: dict, img_prefix: str = "") -> str:
+    """稿件 → 干净文章页 HTML：h1 标题 + 首图 + 每段 <p>。
+    img_prefix：/article 页用空（同源相对路径）；/sync 走 CLI 时传完整 base URL（扩展才抓得到图）。"""
+    esc = html_escape_mod.escape
+    title = esc(art["title"])
+    paras = "\n".join(f"<p>{esc(p.strip())}</p>"
+                      for p in (art.get("body") or "").split("\n") if p.strip())
+    image = f'<img src="{img_prefix}/output/{esc(art["image"])}" alt="{title}">' if art.get("image") else ""
+    return _ARTICLE_PAGE.format(title=title, image=image, paras=paras)
+
+
 @app.get("/article/{article_id}", response_class=HTMLResponse)
 def article_preview(article_id: str):
-    """按 id 渲染一篇干净的文章页：<h1>标题 + 首图置顶 + 每段 <p>。只读，不改任何数据。"""
+    """按 id 渲染一篇干净的文章页。只读，不改任何数据。"""
     art = next((a for a in store.all_articles(limit=1000) if a["id"] == article_id), None)
     if not art:
         return HTMLResponse(
             "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'><title>404</title></head>"
             "<body style='font-family:sans-serif;padding:60px;text-align:center'>"
             "<h1>404</h1><p>稿件不存在或已被删除</p></body></html>", status_code=404)
-    esc = html_escape_mod.escape
-    title = esc(art["title"])
-    paras = "\n".join(f"<p>{esc(p.strip())}</p>"
-                      for p in (art.get("body") or "").split("\n") if p.strip())
-    image = f'<img src="/output/{esc(art["image"])}" alt="{title}">' if art.get("image") else ""
-    return HTMLResponse(_ARTICLE_PAGE.format(title=title, image=image, paras=paras))
+    return HTMLResponse(_article_html(art))
+
+
+# ================= 路2：后端调 wechatsync CLI 自动发布（借浏览器扩展登录态，发进各平台草稿箱）=================
+# CLI 是 nvm 装的，uvicorn 的 PATH 里通常没有 → 必须绝对路径；路径可用 WECHATSYNC_CLI_PATH 覆盖
+_WECHATSYNC_CLI_DEFAULT = "/Users/hans.pan/.nvm/versions/node/v20.20.2/bin/wechatsync"
+
+
+def _wechatsync_cli() -> str:
+    return os.environ.get("WECHATSYNC_CLI_PATH") or _WECHATSYNC_CLI_DEFAULT
+
+
+def _parse_sync_output(out: str, platforms: list[str]) -> list[dict]:
+    """从 CLI 输出解析每个平台的结果（如「✓ toutiao (草稿) https://...」）。
+    解析不出的标 unknown，前端会展示原始输出兜底。"""
+    results = []
+    for p in platforms:
+        status, url = "unknown", None
+        for line in out.splitlines():
+            if p not in line:
+                continue
+            low = line.lower()
+            failed = ("✗" in line or "×" in line or "失败" in line
+                      or "fail" in low or "error" in low)
+            m = re.search(r"https?://\S+", line)
+            if failed:
+                status = "fail"
+                break
+            if "✓" in line or "成功" in line or "success" in low or m:
+                status = "ok"
+                if m:
+                    url = m.group(0).rstrip(".,;)]』」》")
+                break
+        results.append({"platform": p, "status": status, "url": url})
+    return results
+
+
+class SyncRequest(BaseModel):
+    id: str
+    platforms: list[str]
+
+
+@app.post("/sync")
+def sync_article(req: SyncRequest, request: Request):
+    """稿件 → 临时 HTML → wechatsync CLI 发进所选平台草稿箱。
+    不改稿件 status（草稿不算已发）。token 只进子进程环境，不回前端、不进日志。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == req.id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+    platforms = [p.strip() for p in req.platforms if p and p.strip()]
+    if not platforms:
+        raise HTTPException(status_code=400, detail="至少选择一个平台")
+
+    token = os.environ.get("WECHATSYNC_TOKEN", "")
+    if not token:
+        return {"ok": False, "error": "未配置 WECHATSYNC_TOKEN（请填入 .env）", "raw": ""}
+    cli = _wechatsync_cli()
+    if not os.path.exists(cli):
+        return {"ok": False, "error": f"wechatsync CLI 不存在：{cli}（可用 WECHATSYNC_CLI_PATH 环境变量指定）", "raw": ""}
+
+    # 临时 HTML：图片写完整 URL（CLI/扩展抓图上传，本地相对路径它取不到）
+    base = str(request.base_url).rstrip("/")
+    tmp_path = os.path.join(tempfile.gettempdir(), f"flowx_sync_{req.id}.html")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(_article_html(art, img_prefix=base))
+
+    # 子进程环境：PATH 追加 node bin 目录（CLI 内部要找 node）+ token
+    env = os.environ.copy()
+    env["PATH"] = os.path.dirname(cli) + os.pathsep + env.get("PATH", "")
+    env["WECHATSYNC_TOKEN"] = token
+
+    cmd = [cli, "sync", tmp_path, "-p", ",".join(platforms)]
+    print(f"  ⚡ 自动发布《{art['title'][:24]}》 -> {','.join(platforms)}")  # 不打印 env/token
+    try:
+        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "CLI 执行超时（120秒），可改用「🚀 同步发布」手动同步", "raw": ""}
+    except Exception as e:
+        return {"ok": False, "error": f"CLI 调用失败：{e}", "raw": ""}
+
+    raw = ((proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")).strip()
+    raw = raw.replace(token, "***")           # 原始输出兜底展示前先抹掉 token
+    results = _parse_sync_output(proc.stdout or "", platforms)
+    if proc.returncode != 0 and not any(r["status"] == "ok" for r in results):
+        return {"ok": False, "error": f"CLI 退出码 {proc.returncode}", "results": results, "raw": raw[-2000:]}
+    return {"ok": True, "results": results, "raw": raw[-2000:]}
 
 
 # ================= 设置读写（key 绝不经接口读写，只返回是否已配的 bool）=================

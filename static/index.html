@@ -146,6 +146,7 @@ button{font-family:inherit;cursor:pointer}
 .runsum .k{font-family:var(--disp);font-weight:700;color:var(--ink)}
 .pipdot{display:inline-flex;align-items:center;gap:6px;color:var(--ink-soft)}
 .optErr{margin-top:10px;font-size:12.5px;color:var(--stop)}
+.syncPanel{margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:12px 14px;background:var(--surface-2)}
 
 .tabs{display:flex;gap:5px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
 .tab{padding:10px 16px;border:none;background:none;color:var(--ink-soft);font-size:14px;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:7px}
@@ -610,9 +611,11 @@ function cardHtml(a, mode, delta){
   const optBtn=(q.probs.length||q.red)
     ?`<button class="btn tool sm" onclick="optimizeArticle('${escapeHtml(a.id||'')}',this)" title="按质检问题定向修订并自动重检">🔧 一键优化</button>`:'';
   const reimgBtn=`<button class="btn ghost sm" onclick="reimageArticle('${escapeHtml(a.id||'')}',this)" title="换成下一张候选报道图；候选用尽退回图库。只换图，不重新质检">🔄 换图</button>`;
-  // 同步发布：稿库页非红档卡才有（红档已拦截不进发布，与质检闸一致）
+  // 发布按钮：稿库页非红档卡才有（红档已拦截不进发布，与质检闸一致）
+  // 🚀 路1=开预览页手动点扩展；⚡ 路2=后端调 wechatsync CLI 直接发进平台草稿箱
   const syncBtn=(mode==='pub'&&k!=='fix')
-    ?`<button class="btn primary sm" onclick="syncToPlatforms('${escapeHtml(a.id||'')}')" title="打开这篇的独立文章页，在该页点 Wechatsync 扩展图标同步到目标平台">🚀 同步发布</button>`:'';
+    ?`<button class="btn primary sm" onclick="syncToPlatforms('${escapeHtml(a.id||'')}')" title="路1·手动：打开这篇的独立文章页，在该页点 Wechatsync 扩展图标同步">🚀 同步发布</button>`
+     +`<button class="btn tool sm" onclick="autoSyncArticle('${escapeHtml(a.id||'')}',this)" title="路2·自动：后端调 wechatsync CLI，直接发进所选平台的草稿箱">⚡ 自动发布</button>`:'';
   const holders= mode==='gen' ? (q.red?['手动修改']:['编辑'])
                : k==='fix' ? ['重新生成','手动修改']
                : k==='no' ? ['编辑']
@@ -688,6 +691,57 @@ async function reimageArticle(id, btn){
 function syncToPlatforms(id){
   window.open('/article/'+id, '_blank');
   toast('已打开文章页 · 在新标签里点浏览器右上角的 Wechatsync 扩展图标，同步到目标平台');
+}
+
+// ================= 自动发布（路2）：POST /sync → 后端调 wechatsync CLI 发进平台草稿箱 =================
+const SYNC_PLATFORMS=[['toutiao','头条'],['baijiahao','百家号'],['zhihu','知乎']];
+
+function autoSyncArticle(id, btn){
+  const card=btn.closest('.card');
+  let panel=card.querySelector('.syncPanel');
+  if(panel){ panel.remove(); return; }   // 再点一次收起
+  panel=document.createElement('div');
+  panel.className='syncPanel';
+  panel.innerHTML=`<b style="font-size:12px">⚡ 自动发布 · 选择目标平台（发进各平台草稿箱，不直接公开）：</b>
+    <div style="display:flex;gap:16px;margin:9px 0;flex-wrap:wrap">
+      ${SYNC_PLATFORMS.map(([c,n])=>`<label style="display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" value="${c}"${c==='toutiao'?' checked':''}>${n}</label>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px"><button class="btn primary sm">确认发布</button><button class="btn ghost sm">取消</button></div>
+    <div class="syncResult" style="margin-top:9px;font-size:12.5px"></div>`;
+  card.querySelector('.in').appendChild(panel);
+  const [okBtn,cancelBtn]=panel.querySelectorAll(':scope > div > button');
+  cancelBtn.onclick=()=>panel.remove();
+  okBtn.onclick=()=>runAutoSync(id,panel,okBtn);
+}
+
+async function runAutoSync(id, panel, okBtn){
+  const platforms=[...panel.querySelectorAll('input:checked')].map(i=>i.value);
+  if(!platforms.length){ toast('至少选一个平台'); return; }
+  const resBox=panel.querySelector('.syncResult');
+  okBtn.disabled=true; okBtn.textContent='⏳ 发布中…（调同步组件，最长约2分钟）';
+  resBox.textContent='';
+  try{
+    const res=await fetch('/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id, platforms})});
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    if(!d.ok) throw new Error(d.error||'未知错误');
+    const PN=Object.fromEntries(SYNC_PLATFORMS);
+    const hasUnknown=(d.results||[]).some(r=>r.status==='unknown');
+    resBox.innerHTML=(d.results||[]).map(r=>{
+      const name=PN[r.platform]||escapeHtml(r.platform);
+      if(r.status==='ok') return `<div style="color:var(--ok)">✓ ${name} 已进草稿箱${r.url?` · <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600">打开草稿</a>`:''}</div>`;
+      if(r.status==='fail') return `<div style="color:var(--stop)">✗ ${name} 失败（详见原始输出）</div>`;
+      return `<div style="color:var(--ink-soft)">? ${name} 结果未识别（见原始输出）</div>`;
+    }).join('')
+    +((hasUnknown||(d.results||[]).some(r=>r.status==='fail'))&&d.raw
+      ?`<pre style="white-space:pre-wrap;font:11px/1.6 ui-monospace,monospace;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);padding:8px 10px;border-radius:8px;max-height:140px;overflow:auto;margin:8px 0 0">${escapeHtml(d.raw)}</pre>`:'');
+    toast('自动发布完成，结果见卡片内');
+  }catch(e){
+    resBox.innerHTML=`<span style="color:var(--stop)">⚠ 自动发布失败：${escapeHtml(e.message)}${e.message.includes('同步发布')?'':' — 可改用「🚀 同步发布」手动同步。'}</span>`;
+  }finally{
+    okBtn.disabled=false; okBtn.textContent='确认发布';
+  }
 }
 
 // ================= 生产页：/generate 结果渲染 =================
