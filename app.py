@@ -90,7 +90,8 @@ def get_hotspots(req: HotspotsRequest | None = None):
     unclassified = []
     for item in items:
         hit = classify(item, tracks)
-        entry = {"title": item.title, "sources": item.sources or [item.source], "url": item.url}
+        entry = {"title": item.title, "sources": item.sources or [item.source], "url": item.url,
+                 "hot": item.hot}
         if not hit:
             unclassified.append(entry)
             continue

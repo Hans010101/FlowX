@@ -461,6 +461,12 @@ function renderSettingsView(){
 }
 
 // ================= 选题：抓取 → 渲染 → 勾选 =================
+function fmtHot(n){
+  if(n>=1e8) return (n/1e8).toFixed(1)+'亿';
+  if(n>=1e4) return Math.round(n/1e4)+'万';
+  return String(n);
+}
+
 function tog(el){ el.classList.toggle('sel'); updateSelectedBar(); }
 
 function updateSelectedBar(){
@@ -504,12 +510,15 @@ function renderHotspots(data){
       ${g.items.map(it=>{
         const srcs=(it.sources&&it.sources.length?it.sources:[it.source||'']);
         const srcTxt=srcs.map(srcLabel).join('、');
+        // 热度：有真实值显示数值（头条/聚合源有，百度无此数据）；多来源没数值时退回平台数
+        const heat=it.hot?`<span class="heat">🔥 ${fmtHot(it.hot)}${srcs.length>1?` · ${srcs.length}平台`:''}</span>`
+                  :(srcs.length>1?`<span class="heat">🔥 ${srcs.length} 平台同热</span>`:'');
         return `
         <div class="topic" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
           <div class="tick">✓</div>
           <div class="body">
             <div class="ti">${escapeHtml(it.title)}</div>
-            <div class="meta"><span class="stamp${srcs.length>1?' multi':''}">${srcs.map(srcLabel).join(' · ')}</span>${srcs.length>1?`<span class="heat">🔥 ${srcs.length} 平台同热</span>`:''}</div>
+            <div class="meta"><span class="stamp${srcs.length>1?' multi':''}">${srcs.map(srcLabel).join(' · ')}</span>${heat}</div>
           </div>
         </div>`}).join('')}`).join('');
   }

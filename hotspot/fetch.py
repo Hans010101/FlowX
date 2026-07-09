@@ -32,6 +32,15 @@ class HotItem:
     url: str | None = None                        # 主链接（第一个非空）
     sources: list[str] = field(default_factory=list)  # 合并后的全部来源码，如 ["baidu","toutiao"]
     urls: list[str] = field(default_factory=list)     # 合并后的去重链接列表
+    hot: int | None = None                        # 热度值（头条 HotValue / 聚合源 hot；百度无此数据留空）
+
+
+def _to_int(v) -> int | None:
+    try:
+        n = int(float(v))
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 # 规范化标题：去表情、去常见标点、去空白（中文标题里空白只是分隔，直接去掉匹配更准）
@@ -73,8 +82,9 @@ def _merge_items(raw: list[HotItem]) -> list[HotItem]:
         urls = list(dict.fromkeys(x.url for x in items if x.url))
         if len(items) > 1:
             print(f"  ↳ 合并 {len(items)} 条同话题（{'/'.join(sources)}）：{rep.title[:36]}")
+        hot = max((x.hot for x in items if x.hot), default=None)   # 组内取最大热度
         merged.append(HotItem(title=rep.title, source=sources[0], url=urls[0] if urls else None,
-                              sources=sources, urls=urls))
+                              sources=sources, urls=urls, hot=hot))
     return merged
 
 
@@ -118,7 +128,8 @@ def _fetch_toutiao(top_n: int) -> list[HotItem]:
     for row in rows[:top_n]:
         title = (row.get("Title") or row.get("title") or "").strip()
         if title:
-            items.append(HotItem(title=title, source="toutiao", url=row.get("Url") or row.get("url")))
+            items.append(HotItem(title=title, source="toutiao", url=row.get("Url") or row.get("url"),
+                                 hot=_to_int(row.get("HotValue"))))
     return items
 
 
@@ -141,7 +152,8 @@ def _fetch_dailyhot(base_url: str, source: str, top_n: int) -> list[HotItem]:
         title = str(row.get("title") or "").strip()
         if title:
             items.append(HotItem(title=title, source=source,
-                                 url=row.get("url") or row.get("mobileUrl")))
+                                 url=row.get("url") or row.get("mobileUrl"),
+                                 hot=_to_int(row.get("hot"))))
     return items
 
 
