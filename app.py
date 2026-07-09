@@ -26,7 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from config import (load_env, load_settings, enabled_tracks, get_account,
-                    load_tracks, set_hotspot_sources, set_track_enabled, set_research_thresholds)
+                    load_tracks, set_hotspot_sources, set_track_enabled, set_research_thresholds,
+                    ordered_track_keys, set_track_order)
 from hotspot import fetch_all, classify
 from generate import write, pick_cover
 from generate.illustrate import scrape_cover_pool, download_valid_image, save_image_bytes
@@ -101,6 +102,8 @@ def get_hotspots(req: HotspotsRequest | None = None):
         bucket = grouped.setdefault(track_key, {"name": track_conf["name"], "items": []})
         bucket["items"].append(entry)
 
+    # 分组按持久化的赛道顺序输出（JSON 保序，前端按此渲染）
+    grouped = {k: grouped[k] for k in ordered_track_keys(grouped)}
     return {"total": len(items), "tracks": grouped, "unclassified": unclassified}
 
 
@@ -548,8 +551,11 @@ def get_app_settings():
         except Exception:
             dailyhot = "offline"
 
-    tracks = [{"key": k, "name": v.get("name", k), "enabled": bool(v.get("enabled")),
-               "keywords": v.get("keywords", [])} for k, v in load_tracks().items()]
+    all_tracks = load_tracks()
+    tracks = [{"key": k, "name": all_tracks[k].get("name", k),
+               "enabled": bool(all_tracks[k].get("enabled")),
+               "keywords": all_tracks[k].get("keywords", [])}
+              for k in ordered_track_keys(all_tracks)]   # 按持久化顺序返回（芯片/设置页共用）
 
     auto = s.get("auto", {})
     last_run = None
@@ -603,6 +609,22 @@ def post_settings_sources(req: SourcesRequest):
         raise HTTPException(status_code=400, detail="至少保留一个热点来源")
     set_hotspot_sources(sources)
     return {"ok": True, "sources": sources}
+
+
+class TrackOrderRequest(BaseModel):
+    order: list[str]
+
+
+@app.post("/settings/track-order")
+def post_settings_track_order(req: TrackOrderRequest):
+    """写回赛道显示顺序：过滤未知 key，未提及的赛道按现有顺序补在后面。"""
+    tracks = load_tracks()
+    keys = [k for k in req.order if k in tracks]
+    if not keys:
+        raise HTTPException(status_code=400, detail="顺序里没有有效的赛道 key")
+    keys += [k for k in ordered_track_keys(tracks) if k not in keys]
+    set_track_order(keys)
+    return {"ok": True, "order": keys}
 
 
 class ResearchThresholdsRequest(BaseModel):

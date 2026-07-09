@@ -46,6 +46,17 @@ def load_tracks(path: str = "tracks.yaml") -> dict:
     return _load(path).get("tracks", {})
 
 
+def load_track_order(path: str = "tracks.yaml") -> list[str]:
+    """赛道显示顺序（tracks.yaml 顶层 track_order 列表；没配过返回空）。"""
+    return _load(path).get("track_order") or []
+
+
+def ordered_track_keys(tracks: dict, path: str = "tracks.yaml") -> list[str]:
+    """按持久化顺序排 tracks 的 key：track_order 在前，未列出的按定义顺序排后。"""
+    order = [k for k in load_track_order(path) if k in tracks]
+    return order + [k for k in tracks if k not in order]
+
+
 def enabled_tracks(path: str = "tracks.yaml") -> dict:
     return {k: v for k, v in load_tracks(path).items() if v.get("enabled", False)}
 
@@ -101,6 +112,24 @@ def set_research_thresholds(min_results: int, min_chars: int, path: str = "setti
         return
     data = _load(path)
     data.setdefault("research", {}).update(min_results=min_results, min_chars=min_chars)
+    _dump_fallback(path, data)
+
+
+def set_track_order(keys: list[str], path: str = "tracks.yaml"):
+    """写回赛道显示顺序（tracks.yaml 顶层单行 track_order 列表；注释与赛道内容原样保留）。"""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    line = "track_order: [" + ", ".join(keys) + "]"
+    new_text, n = re.subn(r"(?m)^track_order:\s*\[[^\]]*\]", line, text, count=1)
+    if n == 0:  # 首次配置：插在 tracks: 行前
+        new_text, n = re.subn(
+            r"(?m)^tracks:",
+            "# 赛道显示顺序（选题页拖拽芯片自动维护；未列出的赛道排在后面）\n" + line + "\n\ntracks:",
+            text, count=1)
+    if n == 1 and _write_validated(path, new_text, lambda d: d.get("track_order") == keys):
+        return
+    data = _load(path)
+    data["track_order"] = keys
     _dump_fallback(path, data)
 
 

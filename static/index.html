@@ -83,6 +83,9 @@ button{font-family:inherit;cursor:pointer}
 .chip .badge{font-size:10.5px;color:var(--ink-faint);border:1px solid var(--line);border-radius:20px;padding:1px 7px}
 .chip.err{opacity:.75}
 .chip .badge.err{color:var(--warn);border-color:var(--warn)}
+.chip.track{cursor:grab}
+.chip.track:active{cursor:grabbing}
+.chip.dragging{opacity:.35;border-style:dashed}
 
 .btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;border:1px solid transparent;transition:.14s}
 .btn.primary{background:var(--brand);color:#fff}
@@ -252,19 +255,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,
         </div>
 
         <div class="panel">
-          <div class="phead"><div class="t"><span class="barmark"></span>赛道方向 <span class="muted">（开启想做的方向，抓取时只归类这些赛道）</span></div></div>
-          <div class="chips">
-            <label class="chip track on" data-key="minsheng" tabindex="0"><span class="sw"></span>民生</label>
-            <label class="chip track on" data-key="keji" tabindex="0"><span class="sw"></span>科技</label>
-            <label class="chip track on" data-key="tiyu" tabindex="0"><span class="sw"></span>体育</label>
-            <label class="chip track on" data-key="yule" tabindex="0"><span class="sw"></span>娱乐</label>
-            <label class="chip track on" data-key="caiqi" tabindex="0"><span class="sw"></span>财企</label>
-            <label class="chip track on" data-key="shishi" tabindex="0"><span class="sw"></span>时事</label>
-            <label class="chip track on" data-key="jiankang" tabindex="0"><span class="sw"></span>健康</label>
-            <label class="chip" tabindex="0" title="教育赛道未配置（在 tracks.yaml 补上即生效）"><span class="sw"></span>教育</label>
-            <label class="chip track on" data-key="lishi" tabindex="0"><span class="sw"></span>历史</label>
-            <label class="chip track on" data-key="meishi" tabindex="0"><span class="sw"></span>美食</label>
-          </div>
+          <div class="phead"><div class="t"><span class="barmark"></span>赛道方向 <span class="muted">（开启想做的方向；拖拽调顺序，越靠前结果分组越靠上）</span></div></div>
+          <div class="chips" id="trackChips"><span class="muted">读取赛道…</span></div>
         </div>
 
         <div class="trackgroup" id="hotspotGroups">
@@ -323,10 +315,7 @@ function show(v){
 }
 document.querySelectorAll('.navitem').forEach(s=>s.addEventListener('click',()=>show(s.dataset.v)));
 
-// 赛道芯片 = 本次抓取范围（会话内选择，不落盘）；来源芯片由 loadSettingsData 动态渲染（真开关）
-document.querySelectorAll('#pick .chip.track').forEach(c=>{
-  c.addEventListener('click',()=>c.classList.toggle('on'));
-});
+// 赛道芯片由 loadSettingsData 动态渲染（顺序持久化，可拖拽）；勾选状态是会话内的抓取范围，不落盘
 
 // ================= 工具 =================
 function escapeHtml(s){
@@ -359,7 +348,70 @@ async function loadSettingsData(){
     const box=document.getElementById('setBody');
     if(box) box.innerHTML=`<div class="placeholder-note">读取配置失败：${escapeHtml(e.message)}</div>`;
   }
-  renderSrcPill(); renderSettingsView(); renderSourceChips();
+  TRACK_ORDER=SET.tracks.map(t=>t.key);   // /settings 已按持久化顺序返回
+  renderSrcPill(); renderSettingsView(); renderSourceChips(); renderTrackChips();
+}
+
+// ================= 赛道芯片：动态渲染 + 拖拽排序（顺序持久化到 tracks.yaml）=================
+let TRACK_ORDER=[];
+let trackSel={};   // 会话内勾选状态（本次抓取范围），拖拽重渲后保持
+
+function renderTrackChips(){
+  const box=document.getElementById('trackChips');
+  if(!box||!SET.tracks.length) return;
+  const byKey=Object.fromEntries(SET.tracks.map(t=>[t.key,t]));
+  const keys=TRACK_ORDER.filter(k=>byKey[k]);
+  box.innerHTML=keys.map(k=>{
+    const t=byKey[k];
+    const on=trackSel[k]!==undefined?trackSel[k]:t.enabled;
+    trackSel[k]=on;
+    return `<label class="chip track${on?' on':''}" data-key="${escapeHtml(k)}" tabindex="0" draggable="true" title="点击开关；按住拖拽调顺序"><span class="sw"></span>${escapeHtml(t.name)}</label>`;
+  }).join('');
+  bindTrackChipEvents(box);
+}
+
+function bindTrackChipEvents(box){
+  let dragEl=null;
+  box.querySelectorAll('.chip.track').forEach(ch=>{
+    ch.addEventListener('click',()=>{
+      ch.classList.toggle('on');
+      trackSel[ch.dataset.key]=ch.classList.contains('on');
+    });
+    ch.addEventListener('dragstart',e=>{
+      dragEl=ch; ch.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+      try{ e.dataTransfer.setData('text/plain', ch.dataset.key); }catch(_){}
+    });
+    ch.addEventListener('dragend',()=>{
+      ch.classList.remove('dragging'); dragEl=null;
+      saveTrackOrder();
+    });
+    ch.addEventListener('dragover',e=>{
+      e.preventDefault();
+      if(!dragEl||dragEl===ch) return;
+      const r=ch.getBoundingClientRect();
+      ch.parentNode.insertBefore(dragEl, (e.clientX-r.left)<r.width/2 ? ch : ch.nextSibling);
+    });
+  });
+  box.addEventListener('dragover',e=>e.preventDefault());   // 容器空白区也允许 drop，避免浏览器取消动画
+}
+
+async function saveTrackOrder(){
+  const keys=[...document.querySelectorAll('#trackChips .chip.track')].map(c=>c.dataset.key);
+  if(!keys.length||keys.join()===TRACK_ORDER.join()) return;   // 顺序没变不写
+  const prev=TRACK_ORDER;
+  TRACK_ORDER=keys;
+  try{
+    const res=await fetch('/settings/track-order',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({order:keys})});
+    const d=await res.json();
+    if(!res.ok||!d.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    TRACK_ORDER=d.order;
+    toast('赛道顺序已保存 · 结果分组将按此排序');
+  }catch(e){
+    TRACK_ORDER=prev; renderTrackChips();
+    toast('顺序保存失败，已还原：'+e.message);
+  }
 }
 
 function srcChipHtml(s){
@@ -564,7 +616,9 @@ async function fetchHotspots(){
 
 function renderHotspots(data){
   const box=document.getElementById('hotspotGroups');
-  const trackEntries=Object.entries(data.tracks||{});
+  // 分组顺序 = 赛道芯片当前顺序（后端已按持久化顺序输出，这里再按 TRACK_ORDER 排一次兜底）
+  const oi=k=>{const i=TRACK_ORDER.indexOf(k); return i<0?999:i;};
+  const trackEntries=Object.entries(data.tracks||{}).sort((a,b)=>oi(a[0])-oi(b[0]));
   let html='';
   if(trackEntries.length){
     html+=trackEntries.map(([key,g])=>{
