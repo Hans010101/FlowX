@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<!-- Wechatsync 同步组件（article-syncjs）：配合浏览器扩展使用；加载失败/未装扩展时按钮走友好降级 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/wechatsync/article-syncjs@latest/dist/styles.css" />
+<script src="https://cdn.jsdelivr.net/gh/wechatsync/article-syncjs@latest/dist/main.js"></script>
 <style>
 :root{
   --brand:#AE352B; --brand-deep:#83261F; --brand-tint:#F3E4DC;
@@ -610,12 +613,14 @@ function cardHtml(a, mode, delta){
   const optBtn=(q.probs.length||q.red)
     ?`<button class="btn tool sm" onclick="optimizeArticle('${escapeHtml(a.id||'')}',this)" title="按质检问题定向修订并自动重检">🔧 一键优化</button>`:'';
   const reimgBtn=`<button class="btn ghost sm" onclick="reimageArticle('${escapeHtml(a.id||'')}',this)" title="换成下一张候选报道图；候选用尽退回图库。只换图，不重新质检">🔄 换图</button>`;
+  // 同步发布：稿库页非红档卡才有（红档已拦截不进发布，与质检闸一致）
+  const syncBtn=(mode==='pub'&&k!=='fix')
+    ?`<button class="btn primary sm" onclick="syncToPlatforms('${escapeHtml(a.id||'')}',this)" title="用 Wechatsync 浏览器扩展同步发布到已登录的平台">🚀 同步发布</button>`:'';
   const holders= mode==='gen' ? (q.red?['手动修改']:['编辑'])
                : k==='fix' ? ['重新生成','手动修改']
-               : k==='no' ? ['发布…','编辑']
+               : k==='no' ? ['编辑']
                : k==='yes' ? ['查看链接'] : [];
-  const solidFirst=(mode==='pub'&&k==='no');
-  const act=`<div class="actions">${optBtn}${reimgBtn}${phBtns(holders,solidFirst)}</div>`;
+  const act=`<div class="actions">${syncBtn}${optBtn}${reimgBtn}${phBtns(holders,false)}</div>`;
   const stopchip=q.red?`<span class="stopchip">⛔ 已拦截 · 待修复，不进待发</span>`:'';
   return `<article class="card${q.red?' red':''}" data-id="${escapeHtml(a.id||'')}" data-s="${k}">${covHtml(a.image)}<div class="in">
       <div class="row1"><span class="tkmini">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}${right}</div>
@@ -643,6 +648,8 @@ async function optimizeArticle(id, btn){
     const tmp=document.createElement('div');
     tmp.innerHTML=cardHtml({...data, created_at:data.time}, mode, delta);   // data.id 已是新 id（改标题时会变）
     card.replaceWith(tmp.firstElementChild);
+    if(id!==data.id) delete ARTS[id];
+    ARTS[data.id]={...data, created_at:data.time};   // 同步缓存跟上修订版
   }catch(e){
     btn.disabled=false; btn.textContent=orig;
     let note=card.querySelector('.optErr');
@@ -668,6 +675,7 @@ async function reimageArticle(id, btn){
     if(!data.ok) throw new Error(data.error||'未知错误');
     const cov=card.querySelector('.cov');
     if(cov) cov.innerHTML=`<img src="/output/${escapeHtml(data.image)}?t=${Date.now()}" alt="配图" onerror="this.parentNode.textContent='配图加载失败'">`;
+    if(ARTS[id]) ARTS[id].image=data.image;   // 同步缓存跟上新图
     const note=card.querySelector('.optErr'); if(note) note.remove();
   }catch(e){
     let note=card.querySelector('.optErr');
@@ -680,6 +688,45 @@ async function reimageArticle(id, btn){
   }finally{
     btn.disabled=false; btn.textContent=orig;
   }
+}
+
+// ================= 同步发布（方案A：Wechatsync 浏览器扩展 + article-syncjs SDK）=================
+let ARTS={};   // 稿库页最近一次渲染的稿件数据（按 id），供同步发布组装载荷
+
+function articleToHtml(a){
+  // 纯文本 \n 分段 → 每段 <p>；配图放正文顶部（同时也作 thumb）
+  const paras=(a.body||'').split(/\n+/).map(p=>p.trim()).filter(Boolean)
+    .map(p=>`<p>${escapeHtml(p)}</p>`).join('');
+  const img=a.image?`<img src="${location.origin}/output/${escapeHtml(a.image)}" style="max-width:100%">`:'';
+  return img+paras;
+}
+
+function syncToPlatforms(id, btn){
+  const card=btn.closest('.card');
+  const a=ARTS[id];
+  if(!a){ toast('没找到这篇稿件的数据，点「↻ 刷新」后重试'); return; }
+  // 降级：扩展没装 / SDK 没加载 → 友好提示 + 指路，不能点了没反应
+  if(typeof window.syncPost!=='function'){
+    let note=card.querySelector('.optErr');
+    if(!note){
+      note=document.createElement('div');
+      note.className='optErr';
+      card.querySelector('.in').appendChild(note);
+    }
+    note.innerHTML='未检测到 Wechatsync 同步组件。请确认已安装 '
+      +'<a href="https://github.com/wechatsync/Wechatsync" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600">Wechatsync 浏览器扩展</a>'
+      +'（装好后刷新本页），或稍后重试。';
+    toast('未检测到 Wechatsync 扩展');
+    return;
+  }
+  const desc=(a.body||'').replace(/\s+/g,' ').trim().slice(0,60);
+  window.syncPost({
+    title: a.title,
+    desc,
+    content: articleToHtml(a),
+    // 本地图先拼完整 URL 试传；扩展取不到本地图就无封面同步，图片问题下轮解决
+    thumb: a.image?`${location.origin}/output/${a.image}`:''
+  });
 }
 
 // ================= 生产页：/generate 结果渲染 =================
@@ -739,6 +786,7 @@ function renderArticles(arts){
     const c=t.querySelector('.cnt'); if(c) c.textContent=cnt[t.dataset.f];
   });
 
+  ARTS={}; arts.forEach(a=>{ if(a.id) ARTS[a.id]=a; });   // 缓存整篇数据供「同步发布」组装
   document.getElementById('artCards').innerHTML=arts.map(a=>cardHtml(a,'pub')).join('')
     ||'<div class="placeholder-note">稿件库还是空的，先去「生产 · 审核」出几篇</div>';
 
