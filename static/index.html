@@ -430,14 +430,33 @@ async function generateArticles(){
   }
 }
 
+// 解析一条 /generate 结果里的质检信息
+function qcInfo(r){
+  let probs=[]; try{probs=JSON.parse(r.qc_problems||'[]')}catch(e){}
+  if(!Array.isArray(probs)) probs=[];
+  const level=r.qc_level||'';
+  return {
+    probs, level,
+    score: (r.qc_score===0||r.qc_score) ? r.qc_score : null,
+    red: level==='red'||r.status==='待修复',
+    degraded: probs.some(p=>String(p).includes('仅按规则判定'))
+  };
+}
+
 function renderGenerated(results){
-  const okN=results.filter(r=>r.ok).length, failN=results.length-okN;
-  // 运行日志：真实结果汇总
-  const lines=[`<span class="ok">✓</span> 生成完成：共 ${results.length} 篇 · 成功 ${okN} 篇${failN?` · <span class="warn">失败 ${failN} 篇</span>`:''}`];
-  lines.push(...results.map(r=>r.ok
-    ?`<span class="ok">✓</span> [${escapeHtml(r.track||'')}] ${escapeHtml(r.title)} — 出文完成${r.image?'，配图完成':'，无配图'}`
-    :`<span class="warn">✗</span> ${escapeHtml(r.title)} — 失败：${escapeHtml(r.error||'未知错误')}`));
+  const okList=results.filter(r=>r.ok), failN=results.length-okList.length;
+  // 运行日志：结果汇总 + 质检分布
+  const dist={green:0,yellow:0,red:0};
+  okList.forEach(r=>{const q=qcInfo(r); const k=q.red?'red':q.level; if(k in dist) dist[k]++;});
+  const lines=[`<span class="ok">✓</span> 生成完成：共 ${results.length} 篇 · 成功 ${okList.length} 篇${failN?` · <span class="warn">失败 ${failN} 篇</span>`:''}`];
+  if(okList.length) lines.push(`<span class="ok">✓</span> 质检分布：🟢 绿 ${dist.green} · 🟡 黄 ${dist.yellow} · <span class="warn">🔴 红 ${dist.red}</span>（红档已拦入「待修复」，不进待发）`);
+  lines.push(...results.map(r=>{
+    if(!r.ok) return `<span class="warn">✗</span> ${escapeHtml(r.title)} — 失败：${escapeHtml(r.error||'未知错误')}`;
+    const q=qcInfo(r);
+    return `<span class="ok">✓</span> [${escapeHtml(r.track||'')}] ${escapeHtml(r.title)} — 出文完成${r.image?'，配图完成':'，无配图'}${q.level?`，质检 ${q.score??'—'}（${q.level}）`:''}`;
+  }));
   document.getElementById('genLog').innerHTML=lines.join('<br>');
+
   // 稿件卡片
   document.getElementById('genCards').innerHTML=results.map(r=>{
     if(!r.ok){
@@ -447,11 +466,27 @@ function renderGenerated(results){
         <div class="probs bad"><b>失败原因</b><ul><li>${escapeHtml(r.error||'未知错误')}</li></ul></div>
       </div></div>`;
     }
+    const q=qcInfo(r);
+    // 质检徽章：真实 level+score；level 缺失时退回占位
+    const lvCls=q.red?'r':(q.level==='green'?'g':'y');
+    const lvIcon=q.red?'🔴':(q.level==='green'?'🟢':'🟡');
+    const qcBadge=q.level
+      ?`<span class="qc ${lvCls}"><span class="dot"></span>${lvIcon} 质检 ${q.score??'—'}${q.red?' · 已拦截':''}</span>`
+      :`<span class="badge" style="background:#f3f2fa;color:var(--sub)">质检：待接入</span>`;
+    const degBadge=q.degraded?`<span class="badge" style="background:#fdf6e3;color:var(--amber)">⚠ AI 检测未生效（仅规则）</span>`:'';
+    // 问题列表：绿/黄卡也展示（AI 常在过关稿上挑出真问题，审核时必须看到）
+    let probsHtml='';
+    if(q.red||q.probs.length){
+      probsHtml=`<div class="probs${q.red?' bad':''}"><b>${q.red?'🔴 已拦截 · 待修复，不进待发':'⚠ 质检发现的问题（请审核确认）'}</b>${q.probs.length?`<ul>${q.probs.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul>`:''}</div>`;
+    }
+    // 红档动作按钮（视觉占位，动作 1c 接入）
+    const act=q.red?`<div class="act"><button class="btn sm" title="动作将在 1c 接入">重新生成</button><button class="btn ghost sm" title="动作将在 1c 接入">手动修改</button><button class="btn ghost sm" title="动作将在 1c 接入">换图后重检</button></div>`:'';
     const cov=r.image?`<div class="cov"><img src="/output/${escapeHtml(r.image)}" alt="配图" onerror="this.parentNode.textContent='🖼 配图加载失败'"></div>`:'';
-    return `<div class="gcard">${cov}<div class="gp">
-      <div class="st"><span class="badge b-track">${escapeHtml(r.track||'')}</span><span class="badge" style="background:#f3f2fa;color:var(--sub)">质检：待接入</span><span class="src">${srcLabel(r.source)}</span></div>
+    return `<div class="gcard" data-id="${escapeHtml(r.id||'')}"${q.red?' style="border-color:#f2c4c4"':''}>${cov}<div class="gp">
+      <div class="st"><span class="badge b-track">${escapeHtml(r.track||'')}</span>${qcBadge}${degBadge}<span class="src">${srcLabel(r.source)}</span></div>
       <h4>${escapeHtml(r.title)}</h4>
       <div class="tx body" title="点击展开/收起全文" onclick="this.classList.toggle('full')">${escapeHtml(r.body||'').replace(/\n+/g,'<br><br>')}</div>
+      ${probsHtml}${act}
     </div></div>`;
   }).join('') || '<div class="empty">暂无稿件</div>';
 }
