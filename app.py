@@ -26,6 +26,7 @@ from research import search_results, build_material
 from publishers import get_publisher, Article
 from quality import quality_check
 import store
+from store.db import _aid
 
 
 def _qc_safe(art_item: dict) -> dict:
@@ -145,7 +146,7 @@ def generate_articles(req: GenerateRequest):
         }
         status = _apply_qc(art_item)
         store.save_article(art_item, status)
-        results.append({"ok": True, "status": status, **art_item})
+        results.append({"ok": True, "id": _aid(art_item["title"]), "status": status, **art_item})
 
     return {"results": results}
 

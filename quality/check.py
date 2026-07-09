@@ -15,23 +15,29 @@ from generate.writer import _LEAK_PATTERNS
 SEVERE_DEDUCT = 30
 MINOR_DEDUCT = 10
 
-# 标题断尾的虚词（长词在前，优先匹配）
-_BAD_TAILS = sorted(
-    ["这次", "的", "了", "是", "和", "与", "及", "或", "在", "对", "把", "被",
-     "将", "为", "让", "而", "等", "就", "都", "也", "还", "但", "却", "并", "向", "从", "于"],
+# 标题断尾的虚词，分两档（长词在前，优先匹配）：
+# 严重 = 结构性虚词结尾，标题必然悬空（"了"不在列：以"了"结尾多为完整句，如"养老金涨了"）
+_SEVERE_TAILS = sorted(
+    ["的", "地", "和", "与", "及", "或", "跟", "并", "而", "在", "对", "把", "被",
+     "将", "为", "向", "从", "由", "以", "比", "给"],
     key=len, reverse=True)
+# 一般 = 有歧义的结尾（可能完整可能断），只扣分不单独挂红
+_MINOR_TAILS = sorted(["是", "这次"], key=len, reverse=True)
 # 成对标点（左右字符不同，按计数配对）
 _PAIRED_MARKS = [("《", "》"), ("“", "”"), ("「", "」"), ("(", ")"), ("（", "）"), ("【", "】"), ("[", "]")]
 # 判断断尾前先剥掉结尾的整句标点
 _TAIL_PUNCT = "！？。!?…～~"
 
 
-def _title_bad_tail(title: str) -> str | None:
-    """标题以虚词硬结尾则返回命中的词，否则 None。"""
+def _title_bad_tail(title: str) -> tuple[str, str] | None:
+    """标题以虚词硬结尾则返回 (档位, 命中词)，档位为 severe/minor；否则 None。"""
     t = title.strip().rstrip(_TAIL_PUNCT)
-    for w in _BAD_TAILS:
+    for w in _SEVERE_TAILS:
         if t.endswith(w):
-            return w
+            return ("severe", w)
+    for w in _MINOR_TAILS:
+        if t.endswith(w):
+            return ("minor", w)
     return None
 
 
@@ -47,11 +53,16 @@ def rule_check(article: dict) -> tuple[list[str], int, bool]:
     severe = 0
     minor = 0
 
-    # 标题断尾【严重】
+    # 标题断尾：结构性虚词【严重】，歧义词【一般】
     tail = _title_bad_tail(title)
     if tail:
-        problems.append(f"标题疑似断尾：以虚词『{tail}』结尾")
-        severe += 1
+        grade, word = tail
+        if grade == "severe":
+            problems.append(f"标题断尾：以结构性虚词『{word}』结尾")
+            severe += 1
+        else:
+            problems.append(f"标题结尾存疑：以『{word}』结尾，请确认是否完整")
+            minor += 1
     if _title_unbalanced(title):
         problems.append("标题含未闭合的引号/括号")
         severe += 1
