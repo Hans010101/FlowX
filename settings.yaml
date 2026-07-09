@@ -20,12 +20,21 @@ image:
   skip_tracks: []           # 这些赛道不自动配图、留空手动配（如想体育手动配，填 [体育]）
 
 hotspot:
-  provider: official        # 官方接口直抓，免Docker。可用：baidu, toutiao
-  sources: [baidu, toutiao]
-  # 按源分别设抓取条数：百度多抓、头条少抓（你要百度占比更大）
+  provider: official        # baidu/toutiao 官方接口直抓；其余源走 base_url 的 DailyHotApi 聚合
+  # DailyHotApi 聚合服务（docker: imsyy/dailyhot-api，端口6688）。挂了不影响 baidu/toutiao
+  base_url: http://127.0.0.1:6688
+  # baidu/toutiao 原生直抓；其余为 DailyHotApi 调用名（加平台=在这加一个名字即可）
+  sources: [baidu, toutiao, douyin, weibo, zhihu, bilibili, 36kr, thepaper]
+  # 按源分别设抓取条数（未列到的默认30）：百度多抓、其余控量避免选题页过长
   top_n:
     baidu: 40
     toutiao: 10
+    douyin: 20
+    weibo: 20
+    zhihu: 15
+    bilibili: 15
+    36kr: 15
+    thepaper: 15
   research_count: 5
 
 research:

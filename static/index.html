@@ -318,7 +318,10 @@ function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function srcLabel(s){ return s==='baidu'?'百度':(s==='toutiao'?'头条':escapeHtml(s||'')); }
+function srcLabel(s){
+  const m={baidu:'百度',toutiao:'头条',douyin:'抖音',weibo:'微博',zhihu:'知乎',bilibili:'B站','36kr':'36氪',thepaper:'澎湃'};
+  return m[s]||escapeHtml(s||'');
+}
 
 // ---- 页1→页2：调用真实 POST /hotspots，把页1赛道开关作为 enabled_tracks 传给后端 ----
 async function fetchHotspots(){
