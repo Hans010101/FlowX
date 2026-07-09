@@ -436,9 +436,73 @@ function covHtml(image){
 function bodyHtml(body){
   return `<div class="tx body" title="点击展开/收起全文" onclick="this.classList.toggle('full')">${escapeHtml(body||'').replace(/\n+/g,'<br><br>')}</div>`;
 }
-// 视觉占位按钮（动作 1c-2 接入，均无 onclick）
-function placeholderBtns(names){
-  return `<div class="act">${names.map((n,i)=>`<button class="btn ${i?'ghost ':''}sm" title="动作将在 1c-2 接入">${n}</button>`).join('')}</div>`;
+// 视觉占位按钮（动作后续接入，均无 onclick）
+function phBtns(names){
+  return names.map((n,i)=>`<button class="btn ${i?'ghost ':''}sm" title="动作将在 1c-2 接入">${n}</button>`).join('');
+}
+// 分数变化小标（一键优化后显示 88→90 ✅）
+function deltaHtml(d){
+  if(!d||d.from==null||d.to==null) return '';
+  const up=d.to>d.from||(d.fromLevel==='red'&&d.toLevel!=='red');
+  return `<span class="badge" style="background:${up?'#e7f7f0':'#f3f2fa'};color:${up?'var(--green)':'var(--sub)'}">${d.from}→${d.to}${up?' ✅':''}</span>`;
+}
+
+// 统一稿件卡片（页3 mode='gen' / 页4 mode='pub'；delta=优化前后分数变化）
+function cardHtml(a, mode, delta){
+  const q=qcInfo(a), k=statusKey(a);
+  let stRow;
+  if(mode==='pub'){
+    const stBadge= k==='yes'?`<span class="badge b-yes">已发</span>`
+                 : k==='fix'?`<span class="badge" style="background:#fdeaea;color:#c0392b">待修复</span>`
+                 : k==='no'?`<span class="badge b-no">未发</span>`
+                 : `<span class="badge" style="background:#f3f2fa;color:var(--sub)">${escapeHtml(a.status||'未知')}</span>`;
+    stRow=`${stBadge}<span class="badge b-track">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}<span class="src">${srcLabel(a.source)}</span><span style="margin-left:auto;font-size:12px;color:var(--sub)">${escapeHtml(a.created_at||a.time||'')}</span>`;
+  }else{
+    stRow=`<span class="badge b-track">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}<span class="src">${srcLabel(a.source)}</span>`;
+  }
+  // 一键优化：有质检问题（或红档）才出现——没问题没得"对症下药"
+  const optBtn=(q.probs.length||q.red)
+    ?`<button class="btn sm" onclick="optimizeArticle('${escapeHtml(a.id||'')}',this)" title="按质检问题定向修订并自动重检">🔧 一键优化</button>`:'';
+  const holders= mode==='gen' ? (q.red?['重新生成','手动修改','换图后重检']:[])
+               : k==='fix' ? ['重新生成','手动修改']
+               : k==='no' ? ['立即发布','编辑'] : [];
+  const act=(optBtn||holders.length)?`<div class="act">${optBtn}${phBtns(holders)}</div>`:'';
+  return `<div class="gcard" data-id="${escapeHtml(a.id||'')}" data-s="${k}"${q.red?' style="border-color:#f2c4c4"':''}>${covHtml(a.image)}<div class="gp">
+      <div class="st">${stRow}</div>
+      <h4>${escapeHtml(a.title)}</h4>
+      ${bodyHtml(a.body)}
+      ${qcProbsHtml(q)}${act}
+    </div></div>`;
+}
+
+// 一键优化：POST /revise → 就地把这张卡换成修订版（后端保证失败时原稿不动）
+async function optimizeArticle(id, btn){
+  const card=btn.closest('.gcard');
+  const orig=btn.textContent;
+  btn.disabled=true; btn.textContent='⏳ 优化中…（改写+重检约30~60秒）';
+  try{
+    const res=await fetch('/revise',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id})});
+    if(!res.ok) throw new Error('请求失败：'+res.status);
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'未知错误');
+    const mode=card.closest('#artCards')?'pub':'gen';
+    const delta={from:data.before?.qc_score, to:data.qc_score,
+                 fromLevel:data.before?.qc_level, toLevel:data.qc_level};
+    const tmp=document.createElement('div');
+    tmp.innerHTML=cardHtml({...data, created_at:data.time}, mode, delta);   // data.id 已是新 id（改标题时会变）
+    card.replaceWith(tmp.firstElementChild);
+  }catch(e){
+    btn.disabled=false; btn.textContent=orig;
+    let note=card.querySelector('.optErr');
+    if(!note){
+      note=document.createElement('div');
+      note.className='optErr';
+      note.style.cssText='margin-top:8px;font-size:12.5px;color:#c0392b';
+      card.querySelector('.gp').appendChild(note);
+    }
+    note.textContent='⚠ 优化失败，原稿保留：'+e.message;
+  }
 }
 
 function renderGenerated(results){
@@ -464,14 +528,7 @@ function renderGenerated(results){
         <div class="probs bad"><b>失败原因</b><ul><li>${escapeHtml(r.error||'未知错误')}</li></ul></div>
       </div></div>`;
     }
-    const q=qcInfo(r);
-    const act=q.red?placeholderBtns(['重新生成','手动修改','换图后重检']):'';
-    return `<div class="gcard" data-id="${escapeHtml(r.id||'')}"${q.red?' style="border-color:#f2c4c4"':''}>${covHtml(r.image)}<div class="gp">
-      <div class="st"><span class="badge b-track">${escapeHtml(r.track||'')}</span>${qcBadgeHtml(q)}${degBadgeHtml(q)}<span class="src">${srcLabel(r.source)}</span></div>
-      <h4>${escapeHtml(r.title)}</h4>
-      ${bodyHtml(r.body)}
-      ${qcProbsHtml(q)}${act}
-    </div></div>`;
+    return cardHtml(r,'gen');
   }).join('') || '<div class="empty">暂无稿件</div>';
 }
 
@@ -504,22 +561,8 @@ function renderArticles(arts){
   const labels={all:'全部',no:'未发',yes:'已发',fix:'待修复'};
   document.querySelectorAll('#p4tabs .tab').forEach(t=>{t.textContent=`${labels[t.dataset.f]} ${cnt[t.dataset.f]}`;});
 
-  document.getElementById('artCards').innerHTML=arts.map(a=>{
-    const q=qcInfo(a), k=statusKey(a);
-    const stBadge= k==='yes'?`<span class="badge b-yes">已发</span>`
-                 : k==='fix'?`<span class="badge" style="background:#fdeaea;color:#c0392b">待修复</span>`
-                 : k==='no'?`<span class="badge b-no">未发</span>`
-                 : `<span class="badge" style="background:#f3f2fa;color:var(--sub)">${escapeHtml(a.status||'未知')}</span>`;
-    const btns= k==='fix'?placeholderBtns(['重新生成','手动修改'])
-              : k==='no'?placeholderBtns(['立即发布','编辑'])
-              : '';
-    return `<div class="gcard" data-id="${escapeHtml(a.id||'')}" data-s="${k}"${k==='fix'?' style="border-color:#f2c4c4"':''}>${covHtml(a.image)}<div class="gp">
-      <div class="st">${stBadge}<span class="badge b-track">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${degBadgeHtml(q)}<span class="src">${srcLabel(a.source)}</span><span style="margin-left:auto;font-size:12px;color:var(--sub)">${escapeHtml(a.created_at||'')}</span></div>
-      <h4>${escapeHtml(a.title)}</h4>
-      ${bodyHtml(a.body)}
-      ${qcProbsHtml(q)}${btns}
-    </div></div>`;
-  }).join('')||'<div class="empty">稿件库还是空的，先去「③ 生成预览」出几篇</div>';
+  document.getElementById('artCards').innerHTML=arts.map(a=>cardHtml(a,'pub')).join('')
+    ||'<div class="empty">稿件库还是空的，先去「③ 生成预览」出几篇</div>';
 
   // 按当前选中 tab 重新应用筛选（刷新后保持所在栏）
   const cur=document.querySelector('#p4tabs .tab.on');
