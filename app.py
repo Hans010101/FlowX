@@ -298,22 +298,11 @@ def _parse_sync_output(out: str, platforms: list[str]) -> list[dict]:
     return results
 
 
-class SyncRequest(BaseModel):
-    id: str
-    platforms: list[str]
-
-
-@app.post("/sync")
-def sync_article(req: SyncRequest, request: Request):
-    """稿件 → 临时 HTML → wechatsync CLI 发进所选平台草稿箱。
-    不改稿件 status（草稿不算已发）。token 只进子进程环境，不回前端、不进日志。"""
-    art = next((a for a in store.all_articles(limit=1000) if a["id"] == req.id), None)
-    if not art:
-        raise HTTPException(status_code=404, detail="稿件不存在")
-    platforms = [p.strip() for p in req.platforms if p and p.strip()]
-    if not platforms:
-        raise HTTPException(status_code=400, detail="至少选择一个平台")
-
+def _sync_article_via_cli(art: dict, platforms: list[str], base_url: str,
+                          with_cover: bool = False) -> dict:
+    """CLI 发草稿内核（/sync 接口与自动流水线共用）：
+    稿件 → 临时 HTML（图片完整URL）→ wechatsync CLI → 解析各平台结果。
+    token 只进子进程环境，不回前端、不进日志。"""
     token = os.environ.get("WECHATSYNC_TOKEN", "")
     if not token:
         return {"ok": False, "error": "未配置 WECHATSYNC_TOKEN（请填入 .env）", "raw": ""}
@@ -321,11 +310,10 @@ def sync_article(req: SyncRequest, request: Request):
     if not os.path.exists(cli):
         return {"ok": False, "error": f"wechatsync CLI 不存在：{cli}（可用 WECHATSYNC_CLI_PATH 环境变量指定）", "raw": ""}
 
-    # 临时 HTML：图片写完整 URL（CLI/扩展抓图上传，本地相对路径它取不到）
-    base = str(request.base_url).rstrip("/")
-    tmp_path = os.path.join(tempfile.gettempdir(), f"flowx_sync_{req.id}.html")
+    aid = _aid(art["title"])
+    tmp_path = os.path.join(tempfile.gettempdir(), f"flowx_sync_{aid}.html")
     with open(tmp_path, "w", encoding="utf-8") as f:
-        f.write(_article_html(art, img_prefix=base))
+        f.write(_article_html(art, img_prefix=base_url))
 
     # 子进程环境：PATH 追加 node bin 目录（CLI 内部要找 node）+ token
     env = os.environ.copy()
@@ -333,9 +321,20 @@ def sync_article(req: SyncRequest, request: Request):
     env["WECHATSYNC_TOKEN"] = token
 
     cmd = [cli, "sync", tmp_path, "-p", ",".join(platforms)]
-    print(f"  ⚡ 自动发布《{art['title'][:24]}》 -> {','.join(platforms)}")  # 不打印 env/token
+    if with_cover and art.get("image"):
+        cmd += ["--cover", f"{base_url}/output/{art['image']}"]
+
+    def _run(c):
+        return subprocess.run(c, env=env, capture_output=True, text=True, timeout=120)
+
+    print(f"  ⚡ CLI 发草稿《{art['title'][:24]}》 -> {','.join(platforms)}"
+          f"{'（带 --cover）' if '--cover' in cmd else ''}")   # 不打印 env/token
     try:
-        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+        proc = _run(cmd)
+        # 旧版 CLI 可能不认 --cover：报 unknown option 就去掉重试一次
+        if with_cover and proc.returncode != 0 and "unknown option" in ((proc.stderr or "") + (proc.stdout or "")).lower():
+            print("    CLI 不认 --cover，去掉重试（草稿封面将不设置）")
+            proc = _run([cli, "sync", tmp_path, "-p", ",".join(platforms)])
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "CLI 执行超时（120秒），可改用「🚀 同步发布」手动同步", "raw": ""}
     except Exception as e:
@@ -347,6 +346,176 @@ def sync_article(req: SyncRequest, request: Request):
     if proc.returncode != 0 and not any(r["status"] == "ok" for r in results):
         return {"ok": False, "error": f"CLI 退出码 {proc.returncode}", "results": results, "raw": raw[-2000:]}
     return {"ok": True, "results": results, "raw": raw[-2000:]}
+
+
+class SyncRequest(BaseModel):
+    id: str
+    platforms: list[str]
+
+
+@app.post("/sync")
+def sync_article(req: SyncRequest, request: Request):
+    """稿件 → wechatsync CLI 发进所选平台草稿箱（不改稿件 status，草稿不算已发）。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == req.id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+    platforms = [p.strip() for p in req.platforms if p and p.strip()]
+    if not platforms:
+        raise HTTPException(status_code=400, detail="至少选择一个平台")
+    return _sync_article_via_cli(art, platforms, str(request.base_url).rstrip("/"))
+
+
+# ================= 自动流水线：定时 选题→生成→质检→筛档→CLI进草稿箱（无人值守）=================
+# ⚠️ CLI 借浏览器扩展登录态发草稿：自动任务运行时需 浏览器 + Wechatsync 扩展 开着
+AUTO_RUNS_LOG = "logs/auto_runs.jsonl"
+_SELF_BASE = os.environ.get("FLOWX_BASE_URL", "http://127.0.0.1:8000")  # 扩展抓图要能访问到本服务
+
+
+def _append_auto_run(record: dict):
+    try:
+        os.makedirs("logs", exist_ok=True)
+        with open(AUTO_RUNS_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"  ⚠️ 自动流水线记录写入失败：{e}")
+
+
+def run_auto_pipeline(trigger: str = "manual", overrides: dict | None = None) -> dict:
+    """编排层：串现有引擎（fetch_all/classify → generate_articles → 质量闸 → CLI草稿）。
+    整体 try/except，单篇失败不影响整批、不崩服务；每轮写一条 jsonl 运行记录。"""
+    started = time.strftime("%Y-%m-%d %H:%M:%S")
+    settings = load_settings()
+    auto = {**settings.get("auto", {}), **(overrides or {})}
+    record: dict = {"time": started, "trigger": trigger, "ok": True}
+
+    if trigger == "schedule" and not auto.get("enabled"):
+        record.update(ok=False, skipped="auto.enabled=false，本轮跳过")
+        print("  ⏰ 自动流水线：auto.enabled=false，跳过本轮")
+        _append_auto_run(record)
+        return record
+
+    try:
+        # 1) 选题：现有抓取+归类；auto.tracks 非空则只留这些赛道；跳过已写过的选题
+        hconf = settings.get("hotspot", {})
+        items = fetch_all(hconf.get("base_url", ""), hconf.get("sources", ["baidu"]),
+                          hconf.get("top_n", 30), provider=hconf.get("provider", "official"))
+        tracks = enabled_tracks()
+        want = auto.get("tracks") or []
+        if want:
+            tracks = {k: v for k, v in tracks.items() if k in want}
+        count = max(1, int(auto.get("count", 3)))
+        picked = []
+        for it in items:
+            hit = classify(it, tracks)
+            if not hit or store.is_processed(it.title):
+                continue
+            picked.append((it, hit[0]))
+            if len(picked) >= count:
+                break
+        record["picked"] = [{"title": it.title, "track": tk,
+                             "sources": it.sources or [it.source], "hot": it.hot}
+                            for it, tk in picked]
+        print(f"  ⏰ 自动流水线（{trigger}）：选题 {len(picked)}/{count} 条")
+        if not picked:
+            record["summary"] = "没有可写的新选题（命中赛道的都已写过），本轮结束"
+            _append_auto_run(record)
+            return record
+
+        # 2+3) 生成+质检+入库：直接复用 /generate 处理函数（搜索兜底/配图池/质检/红档拦截全都在）
+        src_name = dict(ALL_HOT_SOURCES)   # 来源码→中文（与前端 srcLabel 一致）
+        gen_items = [GenerateItem(
+            title=it.title,
+            source="、".join(src_name.get(s, s) for s in (it.sources or [it.source])),
+            url=it.url or "", track_key=tk) for it, tk in picked]
+        results = generate_articles(GenerateRequest(items=gen_items))["results"]
+        gen_ok = [r for r in results if r.get("ok")]
+        record["generated"] = [
+            ({"id": r.get("id"), "title": r.get("title"), "status": r.get("status"),
+              "qc": f"{r.get('qc_score')}/{r.get('qc_level')}"} if r.get("ok")
+             else {"title": r.get("title"), "error": r.get("error")}) for r in results]
+
+        # 4) 质量闸：green 只留绿档；green+yellow 留绿黄；红档一律不进草稿
+        min_level = str(auto.get("min_level", "green"))
+        allowed = {"green"} if min_level == "green" else {"green", "yellow"}
+        passed = [r for r in gen_ok if r.get("qc_level") in allowed]
+
+        # 5) CLI 发草稿（带 --cover 顺带再验一次草稿封面）
+        platforms = auto.get("platforms") or ["toutiao"]
+        drafts = []
+        for r in passed:
+            try:
+                res = _sync_article_via_cli(r, platforms, _SELF_BASE, with_cover=True)
+            except Exception as e:
+                res = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            drafts.append({"id": r.get("id"), "title": r.get("title"), "ok": res.get("ok"),
+                           "results": res.get("results"), "error": res.get("error"),
+                           "raw_tail": (res.get("raw") or "")[-300:]})   # 留CLI输出尾部便于查封面/链接
+        record["drafts"] = drafts
+
+        # ── 第二层预留：真发布开关（占位，不接任何真发布动作）──
+        if auto.get("auto_publish"):
+            note = "auto_publish=true：真发布开关已开，但真发布功能待实现——请手动去平台后台发布"
+            print(f"  ⚠️ {note}")
+            record["auto_publish_note"] = note
+
+        n_draft_ok = sum(1 for d in drafts
+                         if d["ok"] and any(x.get("status") == "ok" for x in (d.get("results") or [])))
+        record["summary"] = (f"选题{len(picked)} → 生成成功{len(gen_ok)} → "
+                             f"过质量闸({min_level}){len(passed)} → 草稿成功{n_draft_ok}")
+        print(f"  ⏰ 自动流水线完成：{record['summary']}")
+    except Exception as e:
+        record.update(ok=False, error=f"{type(e).__name__}: {e}")
+        print(f"  ⚠️ 自动流水线异常终止：{e}")
+    _append_auto_run(record)
+    return record
+
+
+class AutoRunRequest(BaseModel):
+    count: int | None = None
+    min_level: str | None = None
+    platforms: list[str] | None = None
+    auto_publish: bool | None = None
+
+
+@app.post("/auto/run")
+def auto_run(req: AutoRunRequest | None = None):
+    """手动触发一轮自动流水线（忽略 enabled 总开关；可传覆盖参数用于测试）。"""
+    overrides = {k: v for k, v in (req.model_dump() if req else {}).items() if v is not None}
+    return run_auto_pipeline("manual", overrides)
+
+
+@app.get("/auto/runs")
+def auto_runs(limit: int = 10):
+    """查最近的自动流水线运行记录（新→旧）。"""
+    if not os.path.exists(AUTO_RUNS_LOG):
+        return {"runs": []}
+    try:
+        lines = [l for l in open(AUTO_RUNS_LOG, encoding="utf-8").read().splitlines() if l.strip()]
+        return {"runs": [json.loads(l) for l in reversed(lines[-limit:])]}
+    except Exception as e:
+        return {"runs": [], "error": str(e)}
+
+
+@app.on_event("startup")
+def _start_auto_scheduler():
+    """服务启动时注册每日定时 job。enabled 在每轮运行时现读（开关即改即生效）；改 schedule 需重启。"""
+    auto = load_settings().get("auto", {})
+    sched = str(auto.get("schedule", "")).strip()
+    if not sched:
+        return
+    try:
+        hh, mm = sched.split(":")
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(lambda: run_auto_pipeline("schedule"),
+                          CronTrigger(hour=int(hh), minute=int(mm)),
+                          id="auto_pipeline", misfire_grace_time=3600)
+        scheduler.start()
+        app.state.auto_scheduler = scheduler
+        print(f"  ⏰ 自动流水线定时已注册：每天 {sched}（enabled={auto.get('enabled')}，运行时现读；需浏览器+Wechatsync扩展开着）")
+    except Exception as e:
+        print(f"  ⚠️ 自动流水线定时注册失败（不影响其它功能）：{e}")
 
 
 # ================= 设置读写（key 绝不经接口读写，只返回是否已配的 bool）=================
@@ -378,7 +547,28 @@ def get_app_settings():
 
     tracks = [{"key": k, "name": v.get("name", k), "enabled": bool(v.get("enabled")),
                "keywords": v.get("keywords", [])} for k, v in load_tracks().items()]
+
+    auto = s.get("auto", {})
+    last_run = None
+    try:
+        if os.path.exists(AUTO_RUNS_LOG):
+            lines = [l for l in open(AUTO_RUNS_LOG, encoding="utf-8").read().splitlines() if l.strip()]
+            if lines:
+                lr = json.loads(lines[-1])
+                last_run = {k: lr.get(k) for k in ("time", "trigger", "ok", "summary", "skipped", "error")}
+    except Exception:
+        pass
     return {
+        "auto": {
+            "enabled": bool(auto.get("enabled")),
+            "schedule": auto.get("schedule", ""),
+            "count": auto.get("count", 3),
+            "min_level": auto.get("min_level", "green"),
+            "tracks": auto.get("tracks") or [],
+            "platforms": auto.get("platforms") or ["toutiao"],
+            "auto_publish": bool(auto.get("auto_publish")),
+            "last_run": last_run,
+        },
         "hotspot": {
             "sources": h.get("sources", []),
             "base_url": base_url,
