@@ -95,6 +95,8 @@ def get_hotspots(req: HotspotsRequest | None = None):
         if not hit:
             unclassified.append(entry)
             continue
+        if store.is_processed(item.title):   # 6小时内写过稿的选题不再列出（超窗可重新采集）
+            continue
         track_key, track_conf = hit
         bucket = grouped.setdefault(track_key, {"name": track_conf["name"], "items": []})
         bucket["items"].append(entry)
@@ -169,6 +171,7 @@ def generate_articles(req: GenerateRequest):
         }
         status = _apply_qc(art_item)
         store.save_article(art_item, status)
+        store.mark_topic_processed(item.title)   # 记录热点选题+时间戳（6小时窗口去重用；手动/自动共用此入口）
         results.append({"ok": True, "id": _aid(art_item["title"]), "status": status, **art_item})
 
     return {"results": results}

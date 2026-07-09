@@ -34,6 +34,14 @@ def _conn():
             image_idx   INTEGER
         )
     """)
+    # 已处理热点选题（id=md5(热点标题)，带生成时间戳，供时间窗口去重；独立新表不动旧数据）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS processed_topics (
+            id           TEXT PRIMARY KEY,
+            title        TEXT,
+            processed_at TEXT
+        )
+    """)
     # 旧库迁移：缺列则补
     try:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -51,10 +59,39 @@ def _aid(title: str) -> str:
     return hashlib.md5(title.encode("utf-8")).hexdigest()[:12]
 
 
-def is_processed(title: str) -> bool:
+def mark_topic_processed(title: str):
+    """记录某热点选题已生成过稿（带时间戳，供 6 小时窗口去重）。"""
     conn = _conn()
     try:
-        return conn.execute("SELECT 1 FROM articles WHERE id=?", (_aid(title),)).fetchone() is not None
+        conn.execute("INSERT OR REPLACE INTO processed_topics (id,title,processed_at) VALUES (?,?,?)",
+                     (_aid(title), title, time.strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _within(ts_str: str, fmt: str, hours: float) -> bool:
+    try:
+        return (time.time() - time.mktime(time.strptime(ts_str, fmt))) < hours * 3600
+    except Exception:
+        return True   # 时间解析不了按"窗口内"保守处理
+
+
+def is_processed(title: str, within_hours: float | None = 6) -> bool:
+    """该热点选题是否在时间窗口内已写过稿：
+    - 优先查 processed_topics（有生成时间戳）；within_hours=None 表示永久去重。
+    - 兼容旧数据：老库无 processed_topics 记录时，退回查 articles 同标题稿（按其 created_at 套同一窗口）。
+    超过窗口的选题视为可重新采集出稿。"""
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT processed_at FROM processed_topics WHERE id=?",
+                           (_aid(title),)).fetchone()
+        if row:
+            return True if within_hours is None else _within(row["processed_at"], "%Y-%m-%d %H:%M:%S", within_hours)
+        row2 = conn.execute("SELECT created_at FROM articles WHERE id=?", (_aid(title),)).fetchone()
+        if not row2:
+            return False
+        return True if within_hours is None else _within(row2["created_at"] or "", "%Y-%m-%d %H:%M", within_hours)
     finally:
         conn.close()
 
