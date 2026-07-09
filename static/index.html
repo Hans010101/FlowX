@@ -225,7 +225,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,
     <div class="navlabel">工作流</div>
     <button class="navitem on" data-v="pick"><span class="n">1</span><span class="tx"><b>选题</b><span>抓热点 · 挑选</span></span></button>
     <button class="navitem" data-v="make"><span class="n">2</span><span class="tx"><b>生产 · 审核</b><span>出文 · 质检 · 优化</span></span></button>
-    <button class="navitem" data-v="store"><span class="n">3</span><span class="tx"><b>稿库 · 发布</b><span>草稿 · 排版 · 发布</span></span></button>
+    <button class="navitem" data-v="store"><span class="n">3</span><span class="tx"><b>稿库 · 发布</b><span>稿件 · 同步 · 发布</span></span></button>
 
     <div class="navdiv"></div>
     <button class="navitem gear" data-v="settings"><span class="n">⚙</span><span class="tx"><b>设置</b><span>来源 · 搜索 · 赛道 · 账号</span></span></button>
@@ -238,7 +238,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,
   <!-- ============ 右侧工作区 ============ -->
   <main class="main">
     <div class="content">
-      <div class="mockbar"><div class="in">🔌 v4 桌面版 · 选题 / 生产·审核 / 稿库 / 设置均已接真实数据（来源与赛道开关即改即存） · 发布动作（1c-2）待接入</div></div>
+      <div class="mockbar"><div class="in">🔌 v4 桌面版 · 选题 / 生产·审核 / 稿库 / 设置 / 发布全链路已通 · 发布支持 🚀 手动同步与 ⚡ 后端自动（多平台进草稿箱，发完点「✓ 标记已发」归档）</div></div>
 
       <!-- ========== 选题 ========== -->
       <section class="view on" id="pick">
@@ -291,7 +291,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,
 
       <!-- ========== 稿库 · 发布 ========== -->
       <section class="view" id="store">
-        <div class="viewhead"><div><p class="eyebrow">Step 03 · Publish</p><h1>稿库 · 发布</h1><p>管理稿件与状态；排版、上传草稿、发布逐步接入</p></div><button class="btn ghost" onclick="loadArticles()">↻ 刷新</button></div>
+        <div class="viewhead"><div><p class="eyebrow">Step 03 · Publish</p><h1>稿库 · 发布</h1><p>管理稿件与状态；🚀 同步发布（预览页+扩展）/ ⚡ 自动发布（多平台草稿），发完记得标记已发</p></div><button class="btn ghost" onclick="loadArticles()">↻ 刷新</button></div>
 
         <div class="tabs" id="tabs">
           <button class="tab on" data-f="all" onclick="ftab(this,'all')">全部 <span class="cnt">0</span></button>
@@ -486,8 +486,8 @@ function renderSettingsView(){
     </div>
     <div class="set-sec">
       <h2>👤 账号与平台 <span class="muted" style="font-weight:400;font-size:12.5px">多平台 · 多账号</span></h2>
-      <p class="sub">今日头条 / 百家号 / 小红书 / X …，每个平台可管理多个账号。</p>
-      <p class="placeholder-note">规划中：随「发布」功能一起接入（1c-2 及之后）。届时在此登录账号、管理登录态。</p>
+      <p class="sub">当前发布走 Wechatsync 浏览器扩展，用的是你浏览器里已登录的各平台账号——在浏览器里登录即可，无需在 FlowX 配置。</p>
+      <p class="placeholder-note">FlowX 内的多账号矩阵管理（同平台多账号、错峰调度）属后续规划。</p>
     </div>
     <div class="set-sec" style="background:var(--surface-2)">
       <h2 style="font-size:14px">🎨 配色约定（设计说明）</h2>
@@ -615,7 +615,7 @@ function qcInfo(r){
 }
 
 function qcBadgeHtml(q){
-  if(!q.level) return `<span class="qc" style="background:var(--surface-2);color:var(--ink-faint)"><span class="qd" style="background:var(--ink-faint)"></span>质检 待接入</span>`;
+  if(!q.level) return `<span class="qc" style="background:var(--surface-2);color:var(--ink-faint)" title="质检功能上线前入库的旧稿，可用「一键优化」触发修订+重检"><span class="qd" style="background:var(--ink-faint)"></span>质检 未检</span>`;
   const cls=q.red?'r':(q.level==='green'?'g':'y');
   return `<span class="qc ${cls}"><span class="qd"></span>质检 ${q.score??'—'}</span>`;
 }
@@ -640,9 +640,9 @@ function covHtml(image){
 function bodyHtml(body){
   return `<p class="ex body" title="点击展开/收起全文" onclick="this.classList.toggle('full')">${escapeHtml(body||'').replace(/\n+/g,'<br><br>')}</p>`;
 }
-// 视觉占位按钮（动作后续接入，均无 onclick）
+// 视觉占位按钮（动作未接入，均无 onclick）
 function phBtns(names, solidFirst){
-  return names.map((n,i)=>`<button class="btn ${(solidFirst&&!i)?'primary':'ghost'} sm" title="动作将在 1c-2 接入">${n}</button>`).join('');
+  return names.map((n,i)=>`<button class="btn ${(solidFirst&&!i)?'primary':'ghost'} sm" title="该动作将在后续版本接入">${n}</button>`).join('');
 }
 
 // 统一稿件卡片（生产页 mode='gen' / 稿库页 mode='pub'；delta=优化前后分数变化）
