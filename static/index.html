@@ -1,334 +1,334 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FlowX · 内容工作流</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlowX · 内容工作台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --indigo:#6366f1; --violet:#8b5cf6; --deep:#1e1b4b; --deep2:#312e81;
-  --bg:#f6f7fb; --card:#fff; --ink:#1a1730; --sub:#6b6a82; --line:#eceaf4;
-  --green:#0f9d76; --amber:#c07a00; --grad:linear-gradient(135deg,#6366f1,#8b5cf6);
+  --brand:#AE352B; --brand-deep:#83261F; --brand-tint:#F3E4DC;
+  --paper:#F4ECDD; --surface:#FDFAF3; --surface-2:#FBF5E9;
+  --ink:#2A231E; --ink-soft:#7C7064; --ink-faint:#A99B8A;
+  --line:#E6DAC6; --line-soft:#EFE6D5;
+  --ok:#3B7A57; --ok-bg:#E8F0E9;
+  --warn:#B0801F; --warn-bg:#F6EDD6;
+  --stop:#DE3A32; --stop-bg:#FBE4E1;
+  --radius:14px; --radius-sm:9px;
+  --shadow:0 1px 2px rgba(74,50,30,.05), 0 6px 20px rgba(74,50,30,.06);
+  --disp:"Bricolage Grotesque", system-ui, sans-serif;
+  --cjk:"PingFang SC","Hiragino Sans GB","Microsoft YaHei", system-ui, sans-serif;
+  --mono:"Space Mono", ui-monospace, monospace;
+  --side-w:250px;
 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{font:15px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
-/* ---------- 侧边栏 ---------- */
-.side{width:220px;background:linear-gradient(180deg,#1e1b4b,#2a2266);color:#cdc9ee;display:flex;flex-direction:column;padding:22px 14px;flex-shrink:0}
-.logo{display:flex;align-items:center;gap:10px;padding:6px 8px 22px}
-.logo .mark{width:34px;height:34px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;box-shadow:0 4px 14px rgba(139,92,246,.4)}
-.logo b{color:#fff;font-size:16px;letter-spacing:.3px}
-.logo span{font-size:11px;color:#8983c4;display:block;margin-top:1px}
-.nav{display:flex;flex-direction:column;gap:4px;margin-top:6px}
-.nav a{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:10px;color:#a9a4d6;text-decoration:none;font-size:14px;cursor:pointer;transition:.15s}
-.nav a .ic{width:18px;text-align:center;opacity:.9}
-.nav a:hover{background:rgba(255,255,255,.06);color:#fff}
-.nav a.on{background:var(--grad);color:#fff;box-shadow:0 6px 18px rgba(99,102,241,.45)}
-.nav .step{font-size:11px;color:#726dad;margin:16px 12px 6px;letter-spacing:1px}
-.side .foot{margin-top:auto;font-size:12px;color:#726dad;padding:10px 12px;border-top:1px solid rgba(255,255,255,.08)}
-.side .foot b{color:#b9b4e6;font-weight:500}
-/* ---------- 主区 ---------- */
-.main{flex:1;overflow:auto;height:100vh}
-.head{padding:26px 34px 0}
-.head h1{font-size:22px;font-weight:650}
-.head p{color:var(--sub);font-size:14px;margin-top:4px}
-.body{padding:22px 34px 60px}
-.page{display:none} .page.on{display:block;animation:fade .25s}
-@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-/* 通用块 */
-.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
-.panel h3{font-size:15px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-.panel h3::before{content:"";width:4px;height:15px;border-radius:3px;background:var(--grad)}
-.btn{border:none;background:var(--grad);color:#fff;font-size:14px;font-weight:500;padding:10px 22px;border-radius:10px;cursor:pointer;box-shadow:0 6px 16px rgba(99,102,241,.35)}
-.btn:hover{filter:brightness(1.05)}
-.btn.ghost{background:#fff;color:var(--indigo);border:1px solid var(--line);box-shadow:none}
-.btn.sm{padding:6px 14px;font-size:13px;box-shadow:none}
-.btn.ghost.sm{background:#faf9fe}
-/* 选题设置 */
-.row{display:flex;gap:14px;flex-wrap:wrap}
-.opt{flex:1;min-width:180px;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;cursor:pointer;transition:.15s}
-.opt.on{border-color:var(--indigo);background:linear-gradient(135deg,#f4f3ff,#faf5ff)}
-.opt .t{font-weight:600;display:flex;align-items:center;justify-content:space-between}
-.opt .d{font-size:12px;color:var(--sub);margin-top:4px}
-.tag{font-size:11px;padding:2px 8px;border-radius:10px;background:#eef;color:var(--indigo)}
-.tag.free{background:#e7f7f0;color:var(--green)} .tag.paid{background:#fdf0e3;color:var(--amber)}
-.tracks{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:4px}
-.track{min-width:0;border:1.5px solid var(--line);border-radius:12px;padding:14px 14px}
-.track .top{display:flex;align-items:center;justify-content:space-between}
-.track b{font-size:14px}
-.sw{width:38px;height:22px;border-radius:12px;background:#d9d6ea;position:relative;cursor:pointer;transition:.2s}
-.sw.on{background:var(--indigo)} .sw i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
-.sw.on i{left:18px}
-/* 选题筛选 */
-.grp{margin-bottom:18px}
-.grp .gh{font-size:13px;color:var(--sub);margin-bottom:8px;display:flex;align-items:center;gap:8px}
-.grp .gh .cnt{background:#eef;color:var(--indigo);border-radius:10px;padding:1px 8px;font-size:11px}
-.hot{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:.12s}
-.hot:hover{border-color:#cfc9f0}
-.hot.sel{border-color:var(--indigo);background:linear-gradient(135deg,#f6f5ff,#fcf6ff)}
-.ck{width:20px;height:20px;border:2px solid #cbc8e0;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
-.hot.sel .ck{background:var(--indigo);border-color:var(--indigo)}
-.hot .ht{flex:1;font-weight:500}
-.hot .src{font-size:12px;color:var(--sub);background:#f3f2fa;padding:2px 9px;border-radius:8px}
-.barbtn{position:sticky;bottom:0;background:linear-gradient(0deg,var(--bg) 70%,transparent);padding:14px 0 4px;display:flex;align-items:center;gap:14px}
-.barbtn .n{color:var(--sub);font-size:13px}
-/* 生成预览 & 发布 卡片 */
-.gcard{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:18px}
-.gcard .cov{height:150px;background:linear-gradient(135deg,#e9e7fb,#f3e9fb);display:flex;align-items:center;justify-content:center;color:#9a95c8;font-size:13px}
-.gcard .gp{padding:16px 18px}
-.gcard .st{display:flex;align-items:center;gap:9px;margin-bottom:7px}
-.badge{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:500}
-.b-track{background:#eef;color:var(--indigo)} .b-no{background:#fdf0e3;color:var(--amber)} .b-yes{background:#e7f7f0;color:var(--green)}
-.gcard h4{font-size:17px;font-weight:650} .gcard .tx{color:#403c58;font-size:14px;margin-top:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.gcard .cov img{width:100%;height:100%;object-fit:cover;display:block}
-.gcard .tx.body{-webkit-line-clamp:6;cursor:pointer} .gcard .tx.body.full{-webkit-line-clamp:unset}
-.gcard .act{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
-.tabs{display:flex;gap:8px;margin-bottom:16px}
-.tab{padding:7px 18px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px;color:var(--sub)}
-.tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-.demoNote{background:#fff8ec;border:1px solid #f2d9a8;color:#8a6316;font-size:12.5px;padding:9px 14px;border-radius:9px;margin-bottom:16px}
-.empty{color:var(--sub);font-size:13.5px;padding:8px 2px}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--cjk);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 
-/* 质检徽章 */
-.qc{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px}
-.qc.g{background:#e7f7f0;color:var(--green)} .qc.y{background:#fdf6e3;color:var(--amber)} .qc.r{background:#fdeaea;color:#c0392b}
-.qc .dot{width:7px;height:7px;border-radius:50%} .qc.g .dot{background:var(--green)} .qc.y .dot{background:var(--amber)} .qc.r .dot{background:#c0392b}
-.probs{margin-top:10px;background:#faf9fc;border:1px dashed var(--line);border-radius:9px;padding:10px 12px;font-size:13px;color:#6b5b6b}
-.probs b{color:#8a6316;font-weight:600;display:block;margin-bottom:4px;font-size:12px}
-.probs.bad b{color:#c0392b}
-.probs ul{margin:0;padding-left:16px} .probs li{margin:2px 0}
-/* 运行日志 */
-.log{background:#0f0d1f;border-radius:12px;padding:14px 16px;font:12.5px/1.7 ui-monospace,Menlo,monospace;color:#9d97c4;max-height:150px;overflow:auto}
-.log .ok{color:#6ee7b7} .log .run{color:#c4b5fd} .log .warn{color:#fcd34d}
-/* 平台卡片 */
-.pcard{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
-.pico{width:40px;height:40px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;flex-shrink:0}
-.pcard .pn{flex:1} .pcard .pn b{font-size:15px} .pcard .pn div{font-size:12px;color:var(--sub);margin-top:2px}
-.pstat{font-size:12px;padding:3px 10px;border-radius:20px}
-.pstat.on{background:#e7f7f0;color:var(--green)} .pstat.off{background:#f3f2fa;color:var(--sub)}
-/* 设置子tab */
-.subtabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
-.subtab{padding:7px 16px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:13px;color:var(--sub)}
-.subtab.on{background:var(--grad);color:#fff;border-color:transparent}
-.setblock{display:none} .setblock.on{display:block}
+/* ============ 桌面骨架：左栏 + 右工作区 ============ */
+.app{display:flex;min-height:100vh}
+
+.side{width:var(--side-w);flex:none;position:sticky;top:0;height:100vh;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 16px 16px}
+.brand{display:flex;align-items:baseline;gap:9px;padding:4px 10px 22px}
+.brand .wm{font-family:var(--disp);font-weight:800;font-size:24px;letter-spacing:-.02em;color:var(--brand);line-height:1}
+.brand small{font-family:var(--cjk);font-weight:400;font-size:11.5px;letter-spacing:.04em;color:var(--ink-soft)}
+.navlabel{font-family:var(--disp);font-weight:700;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);padding:0 12px 8px}
+.navitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 12px;border:none;background:none;border-radius:11px;color:var(--ink-soft);margin-bottom:4px;position:relative;transition:.13s}
+.navitem:hover{background:var(--surface-2);color:var(--ink)}
+.navitem.on{background:var(--brand-tint);color:var(--brand-deep)}
+.navitem.on::before{content:"";position:absolute;left:-16px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+.navitem .n{font-family:var(--disp);font-weight:700;font-size:13px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);color:var(--ink-soft);flex:none;border:1px solid var(--line)}
+.navitem.on .n{background:var(--brand);color:#fff;border-color:var(--brand)}
+.navitem .tx b{display:block;font-weight:600;font-size:14.5px;line-height:1.25}
+.navitem .tx span{display:block;font-size:11px;color:var(--ink-faint)}
+.navitem.on .tx span{color:var(--brand);opacity:.75}
+.navdiv{height:1px;background:var(--line);margin:14px 6px}
+.side .foot{margin-top:auto;padding:6px 4px 0}
+.srcpill{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);padding:9px 12px;border-radius:10px;margin-bottom:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)}
+.navitem.gear .n{font-size:14px}
+
+.main{flex:1;min-width:0}
+.content{max-width:1000px;margin:0 auto;padding:32px 40px 70px}
+
+.mockbar{margin:0 auto 22px;max-width:1000px}
+.mockbar .in{background:var(--brand-tint);border:1px solid #E4C7bf;border-radius:10px;padding:9px 16px;font-size:12.5px;color:var(--brand-deep)}
+
+.view{display:none}
+.view.on{display:block}
+.viewhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.viewhead h1{font-family:var(--disp);font-weight:700;font-size:26px;margin:0;letter-spacing:-.015em}
+.viewhead p{margin:4px 0 0;color:var(--ink-soft);font-size:13.5px}
+.eyebrow{font-family:var(--disp);font-weight:700;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand);margin:0 0 4px}
+
+.panel{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.panel > .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+.phead .t{font-weight:600;font-size:15px}
+.phead .t .barmark{display:inline-block;width:3px;height:14px;background:var(--brand);border-radius:2px;margin-right:9px;vertical-align:-2px}
+.muted{color:var(--ink-soft);font-size:12.5px}
+
+.chips{display:flex;flex-wrap:wrap;gap:9px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:13.5px;color:var(--ink);user-select:none;transition:.12s;cursor:pointer}
+.chip:hover{border-color:var(--brand)}
+.chip.on{background:var(--brand-tint);border-color:var(--brand);color:var(--brand-deep);font-weight:600}
+.chip .sw{width:34px;height:19px;border-radius:20px;background:#DccFbb;position:relative;flex:none;transition:.15s}
+.chip .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s}
+.chip.on .sw{background:var(--brand)}
+.chip.on .sw::after{left:17px}
+.chip .badge{font-size:10.5px;color:var(--ink-faint);border:1px solid var(--line);border-radius:20px;padding:1px 7px}
+.chip.err{opacity:.75}
+.chip .badge.err{color:var(--warn);border-color:var(--warn)}
+
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;border:1px solid transparent;transition:.14s}
+.btn.primary{background:var(--brand);color:#fff}
+.btn.primary:hover{background:var(--brand-deep)}
+.btn.ghost{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.btn.ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn.sm{padding:7px 13px;font-size:12.5px;border-radius:8px}
+.btn.tool{background:var(--surface);border:1px solid var(--brand);color:var(--brand);font-weight:600}
+.btn.tool:hover{background:var(--brand);color:#fff}
+.btn:disabled{opacity:.5}
+
+.trackgroup{margin-top:6px}
+.trackhd{display:flex;align-items:center;gap:10px;margin:22px 0 10px}
+.trackhd .tk{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.02em;color:#fff;background:var(--ink);padding:3px 11px;border-radius:7px}
+.trackhd .ct{font-size:12px;color:var(--ink-soft)}
+.trackhd .ln{flex:1;height:1px;background:var(--line)}
+.topic{display:flex;align-items:center;gap:14px;padding:13px 15px;border:1px solid var(--line-soft);border-radius:11px;background:var(--surface);margin-bottom:8px;transition:.12s;cursor:pointer}
+.topic:hover{border-color:var(--line);box-shadow:var(--shadow)}
+.topic.sel{border-color:var(--brand);background:var(--brand-tint)}
+.tick{width:22px;height:22px;border-radius:6px;border:1.5px solid var(--line);flex:none;display:grid;place-items:center;color:transparent;font-size:13px;font-weight:800}
+.topic.sel .tick{background:var(--brand);border-color:var(--brand);color:#fff}
+.topic .body{flex:1;min-width:0}
+.topic .ti{font-size:15px;font-weight:600;color:var(--ink);line-height:1.4}
+.topic .meta{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.stamp{font-size:11px;color:var(--ink-soft);border:1px solid var(--line);border-radius:6px;padding:1px 8px;background:var(--surface-2)}
+.stamp.multi{color:var(--brand-deep);border-color:#E4C7bf;background:var(--brand-tint);font-weight:600}
+.heat{font-size:11.5px;color:var(--brand);font-family:var(--mono);letter-spacing:-.03em}
+.selbar{position:sticky;bottom:18px;margin-top:22px;display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--ink);color:#F4ECDD;border-radius:12px;padding:13px 20px;box-shadow:0 10px 30px rgba(42,35,30,.22)}
+.selbar b{font-family:var(--disp);font-size:16px}
+.selbar .btn.primary{background:#fff;color:var(--brand-deep)}
+.selbar .btn.primary:hover{background:var(--paper)}
+
+.cards{display:grid;grid-template-columns:1fr;gap:16px}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden;box-shadow:var(--shadow)}
+.card.red{border-color:#E6C4be;box-shadow:-3px 0 0 var(--stop) inset, var(--shadow)}
+.card .cov{height:150px;background:linear-gradient(120deg,#e9dcc7,#d8c6a9);position:relative;display:grid;place-items:center;color:#b09a78;font-size:12px;letter-spacing:.1em}
+.card .cov .ck{position:absolute;inset:0;display:grid;place-items:center;color:#b09a78;font-size:12px;letter-spacing:.1em}
+.card .cov img{width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0}
+.card .in{padding:16px 18px 18px}
+.card .row1{display:flex;align-items:center;gap:9px;margin-bottom:9px;flex-wrap:wrap}
+.tkmini{font-size:11px;font-weight:600;color:var(--brand-deep);background:var(--brand-tint);border-radius:6px;padding:2px 9px}
+.qc{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:20px;padding:3px 11px}
+.qc .qd{width:7px;height:7px;border-radius:50%}
+.qc.g{background:var(--ok-bg);color:var(--ok)} .qc.g .qd{background:var(--ok)}
+.qc.y{background:var(--warn-bg);color:var(--warn)} .qc.y .qd{background:var(--warn)}
+.qc.r{background:var(--stop-bg);color:var(--stop)} .qc.r .qd{background:var(--stop)}
+.delta{font-size:11.5px;font-family:var(--mono);color:var(--ok);background:var(--ok-bg);border-radius:6px;padding:1px 7px}
+.card h3{margin:2px 0 8px;font-size:17px;font-weight:700;line-height:1.35}
+.card .ex{color:var(--ink-soft);font-size:13.5px;line-height:1.7;max-height:4.9em;overflow:hidden;cursor:pointer}
+.card .ex.full{max-height:none}
+.src{margin-left:auto;font-size:11px;color:var(--ink-faint)}
+.probs{margin-top:13px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:11px 13px}
+.probs.bad{border-color:#E6C4be;background:var(--stop-bg)}
+.probs .ph{font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.probs.bad .ph{color:var(--stop)}
+.probs ul{margin:0;padding-left:18px}
+.probs li{font-size:12.5px;color:var(--ink-soft);margin:3px 0}
+.stopchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--stop);background:var(--stop-bg);border:1px solid #E6C4be;border-radius:8px;padding:5px 11px;margin-top:12px}
+.actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+.runsum{display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 18px;margin-bottom:16px;font-size:13px;flex-wrap:wrap;box-shadow:var(--shadow)}
+.runsum .k{font-family:var(--disp);font-weight:700;color:var(--ink)}
+.pipdot{display:inline-flex;align-items:center;gap:6px;color:var(--ink-soft)}
+.optErr{margin-top:10px;font-size:12.5px;color:var(--stop)}
+
+.tabs{display:flex;gap:5px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+.tab{padding:10px 16px;border:none;background:none;color:var(--ink-soft);font-size:14px;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:7px}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--brand);border-color:var(--brand)}
+.tab .cnt{font-size:11px;font-family:var(--mono);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:0 7px;color:var(--ink-soft)}
+.tab.on .cnt{background:var(--brand-tint);border-color:#E4C7bf;color:var(--brand-deep)}
+.statustag{font-size:11px;font-weight:600;border-radius:6px;padding:2px 9px}
+.statustag.no{background:var(--surface-2);color:var(--ink-soft);border:1px solid var(--line)}
+.statustag.yes{background:var(--ok-bg);color:var(--ok)}
+.statustag.fix{background:var(--stop-bg);color:var(--stop)}
+
+.set-sec{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
+.set-sec h2{font-family:var(--disp);font-weight:700;font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:9px}
+.set-sec .sub{color:var(--ink-soft);font-size:12.5px;margin:0 0 16px}
+.placeholder-note{color:var(--ink-faint);font-size:12.5px;font-style:italic}
+
+/* 收窄时把左栏压成图标条，避免塌成竖排 */
+@media (max-width:880px){
+  :root{--side-w:70px}
+  .brand small,.navlabel,.navitem .tx,.side .foot .srcpill span{display:none}
+  .brand{justify-content:center;padding:4px 0 18px}
+  .brand .wm{font-size:15px}
+  .navitem{justify-content:center;padding:11px 0}
+  .navitem.on::before{left:-16px}
+  .content{padding:26px 20px 60px}
+  .srcpill{justify-content:center;padding:9px 0}
+}
 </style>
 </head>
 <body>
-<!-- 侧边栏 -->
-<aside class="side">
-  <div class="logo"><div class="mark">流</div><div><b>FlowX</b><span>content flow</span></div></div>
-  <div class="nav" id="nav">
-    <div class="step">工作流程</div>
-    <a class="on" data-p="p1"><span class="ic">◎</span>① 选题设置</a>
-    <a data-p="p2"><span class="ic">☑</span>② 选题筛选</a>
-    <a data-p="p3"><span class="ic">✎</span>③ 生成预览</a>
-    <a data-p="p4"><span class="ic">✈</span>④ 发布管理</a>
-    <div class="step">其他</div>
-    <a data-p="p5"><span class="ic">⚙</span>系统设置</a>
-  </div>
-  <div class="foot">账号：<b>hans_toutiao</b><br>待发 <b>6</b> · 待修复 <b>2</b> · 今日已发 <b>3</b></div>
-</aside>
+<div class="app">
 
-<!-- 主区 -->
-<div class="main">
-  <div class="head"><h1 id="ht">选题设置</h1><p id="hp">选择热点来源和赛道方向，然后抓取今天的热点</p></div>
-  <div class="body">
-    <div class="demoNote">🔌 选题 + 生成 + 质检已接真实数据（①→②→③），④发布管理为真库只读 · 发布/编辑等动作待接入（1c-2） · 系统设置仍为占位</div>
+  <!-- ============ 左侧导航 ============ -->
+  <aside class="side">
+    <div class="brand"><span class="wm">FlowX</span><small>内容工作台</small></div>
 
-    <!-- 页1 选题设置 -->
-    <div class="page on" id="p1">
-      <div class="panel"><h3>热点来源</h3>
-        <div class="row">
-          <div class="opt on"><div class="t">百度热榜 <span class="tag free">免费</span></div><div class="d">百度实时热搜榜</div></div>
-          <div class="opt on"><div class="t">今日头条热榜 <span class="tag free">免费</span></div><div class="d">头条站内热点</div></div>
-          <div class="opt"><div class="t">博查搜索源 <span class="tag paid">付费</span></div><div class="d">更全的聚合，需填 key</div></div>
-        </div>
-      </div>
-      <div class="panel"><h3>搜索素材源（给文章喂原料）</h3>
-        <div class="row">
-          <div class="opt on"><div class="t">Tavily <span class="tag free">免费</span></div><div class="d">每月1000次，默认</div></div>
-          <div class="opt"><div class="t">博查 <span class="tag paid">付费</span></div><div class="d">几分钱一次，内容更全</div></div>
-        </div>
-      </div>
-      <div class="panel"><h3>赛道方向与权重 <span style="font-size:12px;color:var(--sub);font-weight:400">（开启想要的，调每次篇数；默认开启你常用的4个）</span></h3>
-        <div class="tracks">
-          <div class="track" data-key="minsheng"><div class="top"><b>民生</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track" data-key="keji"><div class="top"><b>科技</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track"><div class="top"><b>财企</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track" data-key="tiyu"><div class="top"><b>体育</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track" data-key="yule"><div class="top"><b>娱乐</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track"><div class="top"><b>时事</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track"><div class="top"><b>健康</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track"><div class="top"><b>教育</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track"><div class="top"><b>历史</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-          <div class="track"><div class="top"><b>美食</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
-        </div>
-      </div>
-      <button class="btn" id="fetchBtn" onclick="fetchHotspots()">抓取今日热点 →</button>
+    <div class="navlabel">工作流</div>
+    <button class="navitem on" data-v="pick"><span class="n">1</span><span class="tx"><b>选题</b><span>抓热点 · 挑选</span></span></button>
+    <button class="navitem" data-v="make"><span class="n">2</span><span class="tx"><b>生产 · 审核</b><span>出文 · 质检 · 优化</span></span></button>
+    <button class="navitem" data-v="store"><span class="n">3</span><span class="tx"><b>稿库 · 发布</b><span>草稿 · 排版 · 发布</span></span></button>
+
+    <div class="navdiv"></div>
+    <button class="navitem gear" data-v="settings"><span class="n">⚙</span><span class="tx"><b>设置</b><span>来源 · 搜索 · 赛道 · 账号</span></span></button>
+
+    <div class="foot">
+      <div class="srcpill"><span class="dot"></span><span>百度/头条直抓 · 其余聚合源</span></div>
     </div>
+  </aside>
 
-    <!-- 页2 选题筛选 -->
-    <div class="page" id="p2">
-      <div class="panel">
-        <div id="hotspotGroups">
-          <div class="empty">还没有抓取热点，请先在「① 选题设置」页点击「抓取今日热点」</div>
+  <!-- ============ 右侧工作区 ============ -->
+  <main class="main">
+    <div class="content">
+      <div class="mockbar"><div class="in">🔌 v4 桌面版 · 选题 / 生产·审核 / 稿库已接真实数据 · 来源开关与设置页（R2）、发布动作（1c-2）待接入</div></div>
+
+      <!-- ========== 选题 ========== -->
+      <section class="view on" id="pick">
+        <div class="viewhead">
+          <div><p class="eyebrow">Step 01 · Discover</p><h1>选题</h1><p>选好来源和赛道，抓取今天的热点，勾选要写的题</p></div>
+          <button class="btn primary" id="fetchBtn" onclick="fetchHotspots()">抓取今日热点 →</button>
         </div>
-        <div class="barbtn"><button class="btn" id="genBtn" onclick="generateArticles()">开始生成选中的 0 篇 →</button><span class="n" id="selCount">已选 0 篇 · 勾选你想写的即可</span></div>
-      </div>
+
+        <div class="panel">
+          <div class="phead"><div class="t"><span class="barmark"></span>热点来源</div><span class="muted">来源开关将在「设置」(R2) 接入，当前抓取范围由 settings.yaml 决定</span></div>
+          <div class="chips" id="srcChips">
+            <label class="chip on"><span class="sw"></span>百度 <span class="badge">直抓</span></label>
+            <label class="chip on"><span class="sw"></span>今日头条 <span class="badge">直抓</span></label>
+            <label class="chip on"><span class="sw"></span>抖音</label>
+            <label class="chip err"><span class="sw"></span>微博 <span class="badge err">上游异常</span></label>
+            <label class="chip on"><span class="sw"></span>知乎</label>
+            <label class="chip on"><span class="sw"></span>B站</label>
+            <label class="chip on"><span class="sw"></span>36氪</label>
+            <label class="chip on"><span class="sw"></span>澎湃</label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><div class="t"><span class="barmark"></span>赛道方向 <span class="muted">（开启想做的方向，抓取时只归类这些赛道）</span></div></div>
+          <div class="chips">
+            <label class="chip track on" data-key="minsheng"><span class="sw"></span>民生</label>
+            <label class="chip track on" data-key="keji"><span class="sw"></span>科技</label>
+            <label class="chip track on" data-key="tiyu"><span class="sw"></span>体育</label>
+            <label class="chip track on" data-key="yule"><span class="sw"></span>娱乐</label>
+            <label class="chip"><span class="sw"></span>财企</label>
+            <label class="chip"><span class="sw"></span>时事</label>
+            <label class="chip"><span class="sw"></span>健康</label>
+            <label class="chip"><span class="sw"></span>教育</label>
+            <label class="chip"><span class="sw"></span>历史</label>
+            <label class="chip"><span class="sw"></span>美食</label>
+          </div>
+        </div>
+
+        <div class="trackgroup" id="hotspotGroups">
+          <div class="placeholder-note" style="padding:10px 4px">还没有抓取热点 —— 选好赛道后点右上角「抓取今日热点」</div>
+        </div>
+
+        <div class="selbar" id="selbar" style="display:none">
+          <b id="selCount">已选 0 篇</b>
+          <button class="btn primary" id="genBtn" onclick="generateArticles()">开始生成这 0 篇 →</button>
+        </div>
+      </section>
+
+      <!-- ========== 生产 · 审核 ========== -->
+      <section class="view" id="make">
+        <div class="viewhead"><div><p class="eyebrow">Step 02 · Produce</p><h1>生产 · 审核</h1><p>自动出文 + 配图 + 质检；带问题的稿可「一键优化」定向修订</p></div></div>
+
+        <div class="runsum" id="genSum" style="display:none"></div>
+
+        <div class="cards" id="genCards">
+          <div class="placeholder-note">还没有生成记录 —— 去「选题」勾选热点并点「开始生成」</div>
+        </div>
+      </section>
+
+      <!-- ========== 稿库 · 发布 ========== -->
+      <section class="view" id="store">
+        <div class="viewhead"><div><p class="eyebrow">Step 03 · Publish</p><h1>稿库 · 发布</h1><p>管理稿件与状态；排版、上传草稿、发布逐步接入</p></div><button class="btn ghost" onclick="loadArticles()">↻ 刷新</button></div>
+
+        <div class="tabs" id="tabs">
+          <button class="tab on" data-f="all" onclick="ftab(this,'all')">全部 <span class="cnt">0</span></button>
+          <button class="tab" data-f="no" onclick="ftab(this,'no')">未发 <span class="cnt">0</span></button>
+          <button class="tab" data-f="yes" onclick="ftab(this,'yes')">已发 <span class="cnt">0</span></button>
+          <button class="tab" data-f="fix" onclick="ftab(this,'fix')">待修复 <span class="cnt">0</span></button>
+        </div>
+
+        <div class="cards" id="artCards"><div class="placeholder-note">加载中…</div></div>
+      </section>
+
+      <!-- ========== 设置（R2 构建，先占位） ========== -->
+      <section class="view" id="settings">
+        <div class="viewhead"><div><p class="eyebrow">Configuration</p><h1>设置</h1><p>设一次、偶尔调；日常工作流里不再出现这些开关</p></div></div>
+        <div class="set-sec">
+          <h2>🛠 设置页将在 R2 构建</h2>
+          <p class="sub">规划中的分区：热点来源开关（含聚合服务状态）/ 搜索素材兜底链与阈值 / 赛道管理（关键词·风格）/ 账号与平台。</p>
+          <p class="placeholder-note">当前这些配置由项目根目录的 settings.yaml、tracks.yaml、accounts.yaml 决定，改文件即生效。</p>
+        </div>
+      </section>
+
     </div>
-
-    <!-- 页3 生成预览（真实数据：/generate 的 results 渲染） -->
-    <div class="page" id="p3">
-      <div class="panel"><h3>运行日志</h3>
-        <div class="log" id="genLog"><span class="run">⟳</span> 还没有生成记录 · 请先在「② 选题筛选」勾选热点并点击「开始生成」</div>
-      </div>
-      <div id="genCards">
-        <div class="empty">暂无稿件</div>
-      </div>
-    </div>
-
-    <!-- 页4 发布管理（真库只读：GET /articles，动作 1c-2 接入） -->
-    <div class="page" id="p4">
-      <div class="tabs" id="p4tabs" style="align-items:center">
-        <div class="tab on" data-f="all" onclick="ftab(this,'all')">全部</div>
-        <div class="tab" data-f="no" onclick="ftab(this,'no')">未发</div>
-        <div class="tab" data-f="yes" onclick="ftab(this,'yes')">已发</div>
-        <div class="tab" data-f="fix" onclick="ftab(this,'fix')" style="color:#c0392b">待修复</div>
-        <button class="btn ghost sm" style="margin-left:auto" onclick="loadArticles()">↻ 刷新</button>
-      </div>
-      <div id="artCards"><div class="empty">加载中…</div></div>
-    </div>
-
-    <!-- 页5 系统设置（分子tab） -->
-    <div class="page" id="p5">
-      <div class="subtabs">
-        <div class="subtab on" onclick="stab(this,'s1')">大模型（出文）</div>
-        <div class="subtab" onclick="stab(this,'s2')">搜索源</div>
-        <div class="subtab" onclick="stab(this,'s3')">配图</div>
-        <div class="subtab" onclick="stab(this,'s4')">热点源</div>
-        <div class="subtab" onclick="stab(this,'s5')">质检与发布</div>
-        <div class="subtab" onclick="stab(this,'s6')">平台管理</div>
-      </div>
-
-      <div class="setblock on" id="s1">
-        <div class="panel"><h3>大模型 API（出文用）</h3>
-          <div style="max-width:520px;display:flex;flex-direction:column;gap:12px">
-            <label style="font-size:13px;color:var(--sub)">模型平台
-              <select style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px"><option>DeepSeek</option><option>OpenRouter</option></select></label>
-            <label style="font-size:13px;color:var(--sub)">API Key
-              <input style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px" value="sk-••••••••••••"></label>
-            <button class="btn" style="align-self:flex-start">保存</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="setblock" id="s2">
-        <div class="panel"><h3>搜索素材源</h3>
-          <div class="row" style="margin-bottom:14px">
-            <div class="opt on"><div class="t">Tavily <span class="tag free">免费</span></div><div class="d">每月1000次，默认</div></div>
-            <div class="opt"><div class="t">博查 <span class="tag paid">付费</span></div><div class="d">内容更全</div></div>
-          </div>
-          <label style="font-size:13px;color:var(--sub);max-width:520px;display:block">当前源 API Key
-            <input style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px" value="tvly-••••••••"></label>
-          <button class="btn sm" style="margin-top:12px">保存</button>
-        </div>
-      </div>
-
-      <div class="setblock" id="s3">
-        <div class="panel"><h3>配图设置</h3>
-          <div class="row" style="margin-bottom:14px">
-            <div class="opt on"><div class="t">抓报道原图</div><div class="d">贴合内容，体育也能拿真实赛事图</div></div>
-            <div class="opt"><div class="t">Pexels 图库 <span class="tag free">免费</span></div><div class="d">兜底，需填 key</div></div>
-          </div>
-          <label style="font-size:13px;color:var(--sub);max-width:520px;display:block">Pexels API Key（兜底用）
-            <input style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px" value="••••••••"></label>
-          <button class="btn sm" style="margin-top:12px">保存</button>
-        </div>
-      </div>
-
-      <div class="setblock" id="s4">
-        <div class="panel"><h3>热点来源</h3>
-          <div class="row">
-            <div class="opt on"><div class="t">百度热榜 <span class="tag free">免费</span></div></div>
-            <div class="opt on"><div class="t">今日头条热榜 <span class="tag free">免费</span></div></div>
-            <div class="opt"><div class="t">博查搜索源 <span class="tag paid">付费</span></div></div>
-          </div>
-          <div style="margin-top:14px;font-size:13px;color:var(--sub)">抓取榜单前 <b style="color:var(--ink)">50</b> 条</div>
-        </div>
-      </div>
-
-      <div class="setblock" id="s5">
-        <div class="panel"><h3>质检阈值</h3>
-          <div style="font-size:13.5px;color:#403c58;line-height:2">
-            🟢 通过（≥80分）：进待发<br>🟡 提醒（60–79分）：进待发但标黄<br>🔴 拦截（&lt;60分或严重问题）：进"待修复"，不进待发
-          </div>
-        </div>
-        <div class="panel"><h3>发布模式</h3>
-          <div class="row">
-            <div class="opt on"><div class="t">半自动（推荐）</div><div class="d">生成→质检→我审→发布</div></div>
-            <div class="opt"><div class="t">全自动</div><div class="d">仅绿档自动定时发，红黄留人工</div></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="setblock" id="s6">
-        <div class="panel"><h3>平台管理（一稿可多发）</h3>
-          <div class="pcard"><div class="pico">头</div><div class="pn"><b>今日头条</b><div>浏览器自动化 · 已登录</div></div><span class="pstat on">● 已连接</span></div>
-          <div class="pcard"><div class="pico" style="background:#e9e7fb;color:var(--indigo)">百</div><div class="pn"><b>百家号</b><div>浏览器自动化 · 需登录一次</div></div><button class="btn ghost sm">连接/登录</button></div>
-          <div class="pcard"><div class="pico" style="background:#e9e7fb;color:var(--indigo)">搜</div><div class="pn"><b>搜狐号</b><div>浏览器自动化 · 待接入</div></div><span class="pstat off">待接入</span></div>
-          <div class="pcard"><div class="pico" style="background:#e9e7fb;color:var(--indigo)">微</div><div class="pn"><b>微信公众号</b><div>官方API · 填 AppID / AppSecret</div></div><button class="btn ghost sm">配置</button></div>
-        </div>
-      </div>
-    </div>
-  </div>
+  </main>
 </div>
 
 <script>
-const titles={p1:['选题设置','选择热点来源和赛道方向，然后抓取今天的热点'],
-  p2:['选题筛选','勾选你想写的热点，选中的进入生成'],
-  p3:['生成预览','已生成并质检的稿件，可编辑、重新生成、换图，确认后进入待发'],
-  p4:['发布管理','所有稿件在这里，未发/已发/待修复可筛选，支持一稿多平台发布'],
-  p5:['系统设置','大模型 / 搜索源 / 配图 / 热点源 / 质检发布 / 平台管理']};
-
-function go(p){
-  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
-  document.getElementById(p).classList.add('on');
-  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
-  document.getElementById('ht').textContent=titles[p][0];
-  document.getElementById('hp').textContent=titles[p][1];
-  document.querySelector('.main').scrollTop=0;
-  if(p==='p4') loadArticles();   // 进入发布管理即拉真库
+// ================= 视图切换 =================
+function show(v){
+  document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id===v));
+  document.querySelectorAll('.navitem').forEach(s=>s.classList.toggle('on',s.dataset.v===v));
+  window.scrollTo({top:0});
+  if(v==='store') loadArticles();   // 进稿库即拉真库
 }
-document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.p));
+document.querySelectorAll('.navitem').forEach(s=>s.addEventListener('click',()=>show(s.dataset.v)));
 
-function tog(el){
-  el.classList.toggle('sel');
-  el.querySelector('.ck').textContent=el.classList.contains('sel')?'✓':'';
-  updateSelectedBar();
-}
+// 芯片开关：赛道芯片是真开关（抓取时收集 data-key）；来源芯片本步仅视觉（R2 接入）
+document.querySelectorAll('#pick .chip').forEach(c=>{
+  if(c.querySelector('.badge.err')) return;   // 异常源不给开
+  c.addEventListener('click',()=>c.classList.toggle('on'));
+});
 
-function updateSelectedBar(){
-  const n=document.querySelectorAll('#p2 .hot.sel').length;
-  const genBtn=document.getElementById('genBtn');
-  const selCount=document.getElementById('selCount');
-  if(genBtn) genBtn.textContent=`开始生成选中的 ${n} 篇 →`;
-  if(selCount) selCount.textContent=`已选 ${n} 篇 · 勾选你想写的即可`;
-}
-
+// ================= 工具 =================
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-
 function srcLabel(s){
   const m={baidu:'百度',toutiao:'头条',douyin:'抖音',weibo:'微博',zhihu:'知乎',bilibili:'B站','36kr':'36氪',thepaper:'澎湃'};
   return m[s]||escapeHtml(s||'');
 }
 
-// ---- 页1→页2：调用真实 POST /hotspots，把页1赛道开关作为 enabled_tracks 传给后端 ----
+// ================= 选题：抓取 → 渲染 → 勾选 =================
+function tog(el){ el.classList.toggle('sel'); updateSelectedBar(); }
+
+function updateSelectedBar(){
+  const n=document.querySelectorAll('#pick .topic.sel').length;
+  const genBtn=document.getElementById('genBtn');
+  const selCount=document.getElementById('selCount');
+  if(genBtn) genBtn.textContent=`开始生成这 ${n} 篇 →`;
+  if(selCount) selCount.textContent=`已选 ${n} 篇`;
+}
+
+// 调用真实 POST /hotspots，把赛道芯片开关作为 enabled_tracks 传给后端（契约不变）
 async function fetchHotspots(){
   const btn=document.getElementById('fetchBtn');
-  const enabledTracks=[...document.querySelectorAll('#p1 .track[data-key]')]
-    .filter(t=>t.querySelector('.sw').classList.contains('on'))
-    .map(t=>t.dataset.key);
+  const enabledTracks=[...document.querySelectorAll('#pick .chip.track[data-key]')]
+    .filter(c=>c.classList.contains('on'))
+    .map(c=>c.dataset.key);
   btn.disabled=true; btn.textContent='抓取中 ...';
   try{
     const res=await fetch('/hotspots',{
@@ -338,7 +338,7 @@ async function fetchHotspots(){
     if(!res.ok) throw new Error('请求失败：'+res.status);
     const data=await res.json();
     renderHotspots(data);
-    go('p2');
+    document.getElementById('hotspotGroups').scrollIntoView({behavior:'smooth'});
   }catch(e){
     alert('抓取热点失败：'+e.message);
   }finally{
@@ -352,29 +352,31 @@ function renderHotspots(data){
   let html='';
   if(trackEntries.length){
     html+=trackEntries.map(([key,g])=>`
-      <div class="grp">
-        <div class="gh">${escapeHtml(g.name)} <span class="cnt">${g.items.length} 条</span></div>
-        ${g.items.map(it=>{
-          const srcTxt=(it.sources&&it.sources.length?it.sources:[it.source||'']).map(srcLabel).join('、');
-          return `
-          <div class="hot" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
-            <div class="ck"></div>
-            <div class="ht">${escapeHtml(it.title)}</div>
-            <div class="src">${srcTxt}</div>
-          </div>`}).join('')}
-      </div>`).join('');
+      <div class="trackhd"><span class="tk">${escapeHtml(g.name)}</span><span class="ct">${g.items.length} 条</span><span class="ln"></span></div>
+      ${g.items.map(it=>{
+        const srcs=(it.sources&&it.sources.length?it.sources:[it.source||'']);
+        const srcTxt=srcs.map(srcLabel).join('、');
+        return `
+        <div class="topic" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
+          <div class="tick">✓</div>
+          <div class="body">
+            <div class="ti">${escapeHtml(it.title)}</div>
+            <div class="meta"><span class="stamp${srcs.length>1?' multi':''}">${srcs.map(srcLabel).join(' · ')}</span>${srcs.length>1?`<span class="heat">🔥 ${srcs.length} 平台同热</span>`:''}</div>
+          </div>
+        </div>`}).join('')}`).join('');
   }
   if(data.unclassified && data.unclassified.length){
-    html+=`<div class="grp"><div class="gh" style="color:var(--sub)">未分类 <span class="cnt">${data.unclassified.length} 条</span>（未命中已开启赛道）</div></div>`;
+    html+=`<div class="trackhd"><span class="tk" style="background:var(--ink-faint)">未分类</span><span class="ct">${data.unclassified.length} 条（未命中已开启赛道，不参与生成）</span><span class="ln"></span></div>`;
   }
-  box.innerHTML=html || '<div class="empty">没抓到能归类的热点，换个时间再试试</div>';
+  box.innerHTML=html || '<div class="placeholder-note" style="padding:10px 4px">没抓到能归类的热点，换个时间再试试</div>';
+  document.getElementById('selbar').style.display=trackEntries.length?'flex':'none';
   updateSelectedBar();
 }
 
-// ---- 页2→页3：收集勾选 → POST /generate → 页3渲染真实稿件卡片 ----
+// ================= 生成链：勾选 → POST /generate → 生产页真卡（契约不变）=================
 function collectSelected(){
-  return [...document.querySelectorAll('#p2 .hot.sel')].map(el=>({
-    title: el.querySelector('.ht').textContent,
+  return [...document.querySelectorAll('#pick .topic.sel')].map(el=>({
+    title: el.querySelector('.ti').textContent,
     source: el.dataset.source||'',
     url: el.dataset.url||'',
     track_key: el.dataset.track||''
@@ -385,7 +387,7 @@ async function generateArticles(){
   const items=collectSelected();
   if(!items.length){ alert('还没有勾选热点，先在列表里勾选想写的选题'); return; }
   const btn=document.getElementById('genBtn');
-  btn.disabled=true; btn.textContent=`生成中 ...（共 ${items.length} 篇，搜索素材+出文+配图，请耐心等待）`;
+  btn.disabled=true; btn.textContent=`生成中 ...（共 ${items.length} 篇，搜索素材+出文+配图+质检，请耐心等待）`;
   try{
     const res=await fetch('/generate',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -394,7 +396,7 @@ async function generateArticles(){
     if(!res.ok) throw new Error('请求失败：'+res.status);
     const data=await res.json();
     renderGenerated(data.results||[]);
-    go('p3');
+    show('make');
   }catch(e){
     alert('生成失败：'+e.message);
   }finally{
@@ -402,7 +404,7 @@ async function generateArticles(){
   }
 }
 
-// 解析一条稿件（/generate 结果或 /articles 行）里的质检信息
+// ================= 质检信息与卡片公共件（生产页/稿库页共用）=================
 function qcInfo(r){
   let probs=[]; try{probs=JSON.parse(r.qc_problems||'[]')}catch(e){}
   if(!Array.isArray(probs)) probs=[];
@@ -415,69 +417,70 @@ function qcInfo(r){
   };
 }
 
-// —— 稿件卡片公共渲染件（页3 生成预览 / 页4 发布管理 共用）——
 function qcBadgeHtml(q){
-  if(!q.level) return `<span class="badge" style="background:#f3f2fa;color:var(--sub)">质检：待接入</span>`;
+  if(!q.level) return `<span class="qc" style="background:var(--surface-2);color:var(--ink-faint)"><span class="qd" style="background:var(--ink-faint)"></span>质检 待接入</span>`;
   const cls=q.red?'r':(q.level==='green'?'g':'y');
-  const icon=q.red?'🔴':(q.level==='green'?'🟢':'🟡');
-  return `<span class="qc ${cls}"><span class="dot"></span>${icon} 质检 ${q.score??'—'}${q.red?' · 已拦截':''}</span>`;
+  return `<span class="qc ${cls}"><span class="qd"></span>质检 ${q.score??'—'}</span>`;
 }
 function degBadgeHtml(q){
-  return q.degraded?`<span class="badge" style="background:#fdf6e3;color:var(--amber)">⚠ AI 检测未生效（仅规则）</span>`:'';
+  return q.degraded?`<span class="stamp" style="color:var(--warn);border-color:var(--warn)">⚠ AI 检测未生效（仅规则）</span>`:'';
+}
+function deltaHtml(d){
+  if(!d||d.from==null||d.to==null) return '';
+  const up=d.to>d.from||(d.fromLevel==='red'&&d.toLevel!=='red');
+  return `<span class="delta"${up?'':' style="color:var(--ink-soft);background:var(--surface-2)"'}>${d.from}→${d.to}${up?' ✅':''}</span>`;
 }
 // 问题列表：绿/黄卡也展示（AI 常在过关稿上挑出真问题，审核时必须看到）
 function qcProbsHtml(q){
   if(!q.red&&!q.probs.length) return '';
-  return `<div class="probs${q.red?' bad':''}"><b>${q.red?'🔴 已拦截 · 待修复，不进待发':'⚠ 质检发现的问题（请审核确认）'}</b>${q.probs.length?`<ul>${q.probs.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul>`:''}</div>`;
+  return `<div class="probs${q.red?' bad':''}"><div class="ph">${q.red?'⛔ 拦截原因':'⚠ 质检发现的问题（请审核确认）'}</div>${q.probs.length?`<ul>${q.probs.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul>`:''}</div>`;
 }
 function covHtml(image){
-  return image?`<div class="cov"><img src="/output/${escapeHtml(image)}" alt="配图" onerror="this.parentNode.textContent='🖼 配图加载失败'"></div>`:'';
+  return image
+    ?`<div class="cov"><img src="/output/${escapeHtml(image)}" alt="配图" onerror="this.parentNode.textContent='配图加载失败'"></div>`
+    :`<div class="cov"><div class="ck">— 无配图 —</div></div>`;
 }
 function bodyHtml(body){
-  return `<div class="tx body" title="点击展开/收起全文" onclick="this.classList.toggle('full')">${escapeHtml(body||'').replace(/\n+/g,'<br><br>')}</div>`;
+  return `<p class="ex body" title="点击展开/收起全文" onclick="this.classList.toggle('full')">${escapeHtml(body||'').replace(/\n+/g,'<br><br>')}</p>`;
 }
 // 视觉占位按钮（动作后续接入，均无 onclick）
-function phBtns(names){
-  return names.map((n,i)=>`<button class="btn ${i?'ghost ':''}sm" title="动作将在 1c-2 接入">${n}</button>`).join('');
-}
-// 分数变化小标（一键优化后显示 88→90 ✅）
-function deltaHtml(d){
-  if(!d||d.from==null||d.to==null) return '';
-  const up=d.to>d.from||(d.fromLevel==='red'&&d.toLevel!=='red');
-  return `<span class="badge" style="background:${up?'#e7f7f0':'#f3f2fa'};color:${up?'var(--green)':'var(--sub)'}">${d.from}→${d.to}${up?' ✅':''}</span>`;
+function phBtns(names, solidFirst){
+  return names.map((n,i)=>`<button class="btn ${(solidFirst&&!i)?'primary':'ghost'} sm" title="动作将在 1c-2 接入">${n}</button>`).join('');
 }
 
-// 统一稿件卡片（页3 mode='gen' / 页4 mode='pub'；delta=优化前后分数变化）
+// 统一稿件卡片（生产页 mode='gen' / 稿库页 mode='pub'；delta=优化前后分数变化）
 function cardHtml(a, mode, delta){
   const q=qcInfo(a), k=statusKey(a);
-  let stRow;
-  if(mode==='pub'){
-    const stBadge= k==='yes'?`<span class="badge b-yes">已发</span>`
-                 : k==='fix'?`<span class="badge" style="background:#fdeaea;color:#c0392b">待修复</span>`
-                 : k==='no'?`<span class="badge b-no">未发</span>`
-                 : `<span class="badge" style="background:#f3f2fa;color:var(--sub)">${escapeHtml(a.status||'未知')}</span>`;
-    stRow=`${stBadge}<span class="badge b-track">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}<span class="src">${srcLabel(a.source)}</span><span style="margin-left:auto;font-size:12px;color:var(--sub)">${escapeHtml(a.created_at||a.time||'')}</span>`;
-  }else{
-    stRow=`<span class="badge b-track">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}<span class="src">${srcLabel(a.source)}</span>`;
-  }
-  // 一键优化：有质检问题（或红档）才出现——没问题没得"对症下药"
+  const st= mode!=='pub' ? ''
+        : k==='yes' ? `<span class="statustag yes">已发</span>`
+        : k==='fix' ? `<span class="statustag fix">待修复</span>`
+        : k==='no' ? `<span class="statustag no">未发</span>`
+        : `<span class="statustag no">${escapeHtml(a.status||'未知')}</span>`;
+  const right= mode==='pub'
+    ? `<span class="src">${srcLabel(a.source)} · ${escapeHtml(a.created_at||a.time||'')}</span>${st}`
+    : `<span class="src">${srcLabel(a.source)}</span>`;
+  // 一键优化：有质检问题（或红档）才出现
   const optBtn=(q.probs.length||q.red)
-    ?`<button class="btn sm" onclick="optimizeArticle('${escapeHtml(a.id||'')}',this)" title="按质检问题定向修订并自动重检">🔧 一键优化</button>`:'';
-  const holders= mode==='gen' ? (q.red?['重新生成','手动修改','换图后重检']:[])
+    ?`<button class="btn tool sm" onclick="optimizeArticle('${escapeHtml(a.id||'')}',this)" title="按质检问题定向修订并自动重检">🔧 一键优化</button>`:'';
+  const holders= mode==='gen' ? (q.red?['手动修改','换图后重检']:['编辑'])
                : k==='fix' ? ['重新生成','手动修改']
-               : k==='no' ? ['立即发布','编辑'] : [];
-  const act=(optBtn||holders.length)?`<div class="act">${optBtn}${phBtns(holders)}</div>`:'';
-  return `<div class="gcard" data-id="${escapeHtml(a.id||'')}" data-s="${k}"${q.red?' style="border-color:#f2c4c4"':''}>${covHtml(a.image)}<div class="gp">
-      <div class="st">${stRow}</div>
-      <h4>${escapeHtml(a.title)}</h4>
+               : k==='no' ? ['发布…','编辑']
+               : k==='yes' ? ['查看链接'] : [];
+  const solidFirst=(mode==='pub'&&k==='no');
+  const act=(optBtn||holders.length)?`<div class="actions">${optBtn}${phBtns(holders,solidFirst)}</div>`:'';
+  const stopchip=q.red?`<span class="stopchip">⛔ 已拦截 · 待修复，不进待发</span>`:'';
+  return `<article class="card${q.red?' red':''}" data-id="${escapeHtml(a.id||'')}" data-s="${k}">${covHtml(a.image)}<div class="in">
+      <div class="row1"><span class="tkmini">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}${right}</div>
+      <h3>${escapeHtml(a.title)}</h3>
       ${bodyHtml(a.body)}
+      ${stopchip}
       ${qcProbsHtml(q)}${act}
-    </div></div>`;
+    </div></article>`;
 }
 
 // 一键优化：POST /revise → 就地把这张卡换成修订版（后端保证失败时原稿不动）
 async function optimizeArticle(id, btn){
-  const card=btn.closest('.gcard');
+  const card=btn.closest('.card');
   const orig=btn.textContent;
   btn.disabled=true; btn.textContent='⏳ 优化中…（改写+重检约30~60秒）';
   try{
@@ -498,42 +501,41 @@ async function optimizeArticle(id, btn){
     if(!note){
       note=document.createElement('div');
       note.className='optErr';
-      note.style.cssText='margin-top:8px;font-size:12.5px;color:#c0392b';
-      card.querySelector('.gp').appendChild(note);
+      card.querySelector('.in').appendChild(note);
     }
     note.textContent='⚠ 优化失败，原稿保留：'+e.message;
   }
 }
 
+// ================= 生产页：/generate 结果渲染 =================
 function renderGenerated(results){
   const okList=results.filter(r=>r.ok), failN=results.length-okList.length;
-  // 运行日志：结果汇总 + 质检分布
   const dist={green:0,yellow:0,red:0};
   okList.forEach(r=>{const q=qcInfo(r); const k=q.red?'red':q.level; if(k in dist) dist[k]++;});
-  const lines=[`<span class="ok">✓</span> 生成完成：共 ${results.length} 篇 · 成功 ${okList.length} 篇${failN?` · <span class="warn">失败 ${failN} 篇</span>`:''}`];
-  if(okList.length) lines.push(`<span class="ok">✓</span> 质检分布：🟢 绿 ${dist.green} · 🟡 黄 ${dist.yellow} · <span class="warn">🔴 红 ${dist.red}</span>（红档已拦入「待修复」，不进待发）`);
-  lines.push(...results.map(r=>{
-    if(!r.ok) return `<span class="warn">✗</span> ${escapeHtml(r.title)} — 失败：${escapeHtml(r.error||'未知错误')}`;
-    const q=qcInfo(r);
-    return `<span class="ok">✓</span> [${escapeHtml(r.track||'')}] ${escapeHtml(r.title)} — 出文完成${r.image?'，配图完成':'，无配图'}${q.level?`，质检 ${q.score??'—'}（${q.level}）`:''}`;
-  }));
-  document.getElementById('genLog').innerHTML=lines.join('<br>');
+  const sum=document.getElementById('genSum');
+  sum.innerHTML=`
+    <span class="k">本轮 ${results.length} 篇</span>
+    <span class="pipdot"><span class="dot"></span>绿 ${dist.green}</span>
+    <span class="pipdot"><span class="dot warn"></span>黄 ${dist.yellow}</span>
+    <span class="pipdot"><span class="dot" style="background:var(--stop)"></span>红 ${dist.red}（已拦入待修复）</span>
+    ${failN?`<span class="pipdot" style="color:var(--stop)">✗ 生成失败 ${failN}</span>`:''}
+    <span class="muted" style="margin-left:auto">绿/黄进稿库「未发」 · 红档进「待修复」</span>`;
+  sum.style.display='flex';
 
-  // 稿件卡片
   document.getElementById('genCards').innerHTML=results.map(r=>{
     if(!r.ok){
-      return `<div class="gcard" style="border-color:#f2c4c4"><div class="gp">
-        <div class="st"><span class="badge" style="background:#fdeaea;color:#c0392b">生成失败</span></div>
-        <h4>${escapeHtml(r.title)}</h4>
-        <div class="probs bad"><b>失败原因</b><ul><li>${escapeHtml(r.error||'未知错误')}</li></ul></div>
-      </div></div>`;
+      return `<article class="card red"><div class="in">
+        <div class="row1"><span class="statustag fix">生成失败</span></div>
+        <h3>${escapeHtml(r.title)}</h3>
+        <div class="probs bad"><div class="ph">失败原因</div><ul><li>${escapeHtml(r.error||'未知错误')}</li></ul></div>
+      </div></article>`;
     }
     return cardHtml(r,'gen');
-  }).join('') || '<div class="empty">暂无稿件</div>';
+  }).join('') || '<div class="placeholder-note">暂无稿件</div>';
 }
 
-// ---- 页4 发布管理：GET /articles 真库只读渲染（动作 1c-2 接入）----
-// status → 现有 ftab 的 data-s：未发→no、已发→yes、待修复(或 qc red)→fix，其它/未知只在「全部」出现
+// ================= 稿库页：GET /articles 真库渲染 =================
+// status → tab 的 data-f：未发→no、已发→yes、待修复(或 qc red)→fix，其它/未知只在「全部」出现
 function statusKey(a){
   if(a.status==='待修复'||qcInfo(a).red) return 'fix';
   if(a.status==='已发') return 'yes';
@@ -543,14 +545,14 @@ function statusKey(a){
 
 async function loadArticles(){
   const box=document.getElementById('artCards');
-  box.innerHTML='<div class="empty">加载中…</div>';
+  box.innerHTML='<div class="placeholder-note">加载中…</div>';
   try{
     const res=await fetch('/articles');
     if(!res.ok) throw new Error('请求失败：'+res.status);
     const data=await res.json();
     renderArticles(data.articles||[]);
   }catch(e){
-    box.innerHTML=`<div class="empty">读取稿件库失败：${escapeHtml(e.message)}</div>`;
+    box.innerHTML=`<div class="placeholder-note">读取稿件库失败：${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -558,29 +560,25 @@ function renderArticles(arts){
   // tab 真实计数
   const cnt={all:arts.length,no:0,yes:0,fix:0};
   arts.forEach(a=>{const k=statusKey(a); if(k) cnt[k]++;});
-  const labels={all:'全部',no:'未发',yes:'已发',fix:'待修复'};
-  document.querySelectorAll('#p4tabs .tab').forEach(t=>{t.textContent=`${labels[t.dataset.f]} ${cnt[t.dataset.f]}`;});
+  document.querySelectorAll('#tabs .tab').forEach(t=>{
+    const c=t.querySelector('.cnt'); if(c) c.textContent=cnt[t.dataset.f];
+  });
 
   document.getElementById('artCards').innerHTML=arts.map(a=>cardHtml(a,'pub')).join('')
-    ||'<div class="empty">稿件库还是空的，先去「③ 生成预览」出几篇</div>';
+    ||'<div class="placeholder-note">稿件库还是空的，先去「生产 · 审核」出几篇</div>';
 
   // 按当前选中 tab 重新应用筛选（刷新后保持所在栏）
-  const cur=document.querySelector('#p4tabs .tab.on');
+  const cur=document.querySelector('#tabs .tab.on');
   if(cur) ftab(cur,cur.dataset.f);
 }
 
-function stab(t,id){
-  document.querySelectorAll('.subtab').forEach(x=>x.classList.remove('on'));
+function ftab(t,s){
+  document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');
-  document.querySelectorAll('.setblock').forEach(b=>b.classList.remove('on'));
-  document.getElementById(id).classList.add('on');
+  document.querySelectorAll('#artCards .card').forEach(c=>{c.style.display=(s==='all'||c.dataset.s===s)?'':'none'});
 }
 
-function ftab(t,s){
-  document.querySelectorAll('.tabs .tab').forEach(x=>x.classList.remove('on'));
-  t.classList.add('on');
-  document.querySelectorAll('#p4 .gcard').forEach(c=>{c.style.display=(s==='all'||c.dataset.s===s)?'':'none'});
-}
+updateSelectedBar();
 </script>
 </body>
 </html>
