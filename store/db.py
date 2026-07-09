@@ -1,7 +1,7 @@
 """
-db.py —— 稿件库（SQLite）：存完整稿件 + 状态，供管理页读取
+db.py —— 稿件库（SQLite）：存完整稿件 + 状态 + 质检结果，供管理页读取
 
-状态：未发 / 已发。生成时记"未发"，自动发布后记"已发"。
+状态：未发 / 已发 / 待修复。生成时质检绿黄记"未发"、红档记"待修复"，自动发布后记"已发"。
 """
 from __future__ import annotations
 
@@ -19,16 +19,28 @@ def _conn():
     conn.row_factory = sqlite3.Row
     conn.execute("""
         CREATE TABLE IF NOT EXISTS articles (
-            id         TEXT PRIMARY KEY,
-            title      TEXT,
-            body       TEXT,
-            image      TEXT,
-            track      TEXT,
-            source     TEXT,
-            status     TEXT,
-            created_at TEXT
+            id          TEXT PRIMARY KEY,
+            title       TEXT,
+            body        TEXT,
+            image       TEXT,
+            track       TEXT,
+            source      TEXT,
+            status      TEXT,
+            created_at  TEXT,
+            qc_score    INTEGER,
+            qc_level    TEXT,
+            qc_problems TEXT
         )
     """)
+    # 旧库迁移：缺 qc_* 列则补
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
+        for col, typ in (("qc_score", "INTEGER"), ("qc_level", "TEXT"), ("qc_problems", "TEXT")):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE articles ADD COLUMN {col} {typ}")
+        conn.commit()
+    except Exception as e:
+        print(f"  ⚠️ 稿件库 qc 列迁移失败（不影响旧功能）：{e}")
     return conn
 
 
@@ -45,15 +57,17 @@ def is_processed(title: str) -> bool:
 
 
 def save_article(item: dict, status: str = "未发"):
-    """存一篇稿件。item 需含 title/body/image/track/source。"""
+    """存一篇稿件。item 需含 title/body/image/track/source，可带 qc_score/qc_level/qc_problems（不带存 NULL）。"""
     conn = _conn()
     try:
         conn.execute(
-            "INSERT OR REPLACE INTO articles (id,title,body,image,track,source,status,created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO articles "
+            "(id,title,body,image,track,source,status,created_at,qc_score,qc_level,qc_problems) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (_aid(item["title"]), item["title"], item.get("body", ""), item.get("image"),
              item.get("track", ""), item.get("source", ""), status,
-             item.get("time") or time.strftime("%Y-%m-%d %H:%M")))
+             item.get("time") or time.strftime("%Y-%m-%d %H:%M"),
+             item.get("qc_score"), item.get("qc_level"), item.get("qc_problems")))
         conn.commit()
     finally:
         conn.close()

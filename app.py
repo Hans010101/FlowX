@@ -3,11 +3,14 @@ app.py —— FastAPI 接口层
 
 只编排现有引擎，不重写：
   POST /hotspots -> hotspot.fetch_all + hotspot.classify，按赛道分组返回（不做每赛道篇数限制）
-  POST /generate -> 对用户勾选的热点逐条：search_results→build_material→write→scrape_cover→save_article("未发")
+  POST /generate -> 对用户勾选的热点逐条：search_results→build_material→write→scrape_cover
+                    →quality_check（绿/黄→"未发"，红→"待修复"）→save_article
+  POST /recheck  -> 按稿件 id 重新质检并更新 qc_* 和 status
   GET  /articles -> store.all_articles
 """
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -21,7 +24,26 @@ from generate import write, pick_cover
 from generate.illustrate import scrape_cover
 from research import search_results, build_material
 from publishers import get_publisher, Article
+from quality import quality_check
 import store
+
+
+def _qc_safe(art_item: dict) -> dict:
+    """质检保险层：异常不中断整批，降级为黄档提醒人工复核。"""
+    try:
+        return quality_check(art_item)
+    except Exception as e:
+        print(f"  ⚠️ 质检异常，降级为黄档：{e}")
+        return {"score": None, "level": "yellow", "problems": [f"质检异常（{e}），请人工复核"]}
+
+
+def _apply_qc(art_item: dict) -> str:
+    """对 art_item 就地写入 qc_*，返回按档位定的 status（red→待修复，其余→未发）。"""
+    qc = _qc_safe(art_item)
+    art_item["qc_score"] = qc["score"]
+    art_item["qc_level"] = qc["level"]
+    art_item["qc_problems"] = json.dumps(qc["problems"], ensure_ascii=False)
+    return "待修复" if qc["level"] == "red" else "未发"
 
 load_env()
 
@@ -121,10 +143,30 @@ def generate_articles(req: GenerateRequest):
             "track": track_conf["name"], "source": item.source,
             "time": time.strftime("%Y-%m-%d %H:%M"),
         }
-        store.save_article(art_item, "未发")
-        results.append({"ok": True, **art_item})
+        status = _apply_qc(art_item)
+        store.save_article(art_item, status)
+        results.append({"ok": True, "status": status, **art_item})
 
     return {"results": results}
+
+
+class RecheckRequest(BaseModel):
+    id: str
+
+
+@app.post("/recheck")
+def recheck_article(req: RecheckRequest):
+    """按稿件 id 重新质检：更新该稿 qc_* 与 status（red→待修复，其余→未发）。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == req.id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+
+    status = _apply_qc(art)
+    art["time"] = art.get("created_at")  # 保留原创建时间（save_article 按 title 的 md5 覆盖同一行）
+    store.save_article(art, status)
+    return {"id": req.id, "title": art["title"], "status": status,
+            "qc_score": art["qc_score"], "qc_level": art["qc_level"],
+            "qc_problems": json.loads(art["qc_problems"])}
 
 
 @app.get("/articles")
