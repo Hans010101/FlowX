@@ -376,8 +376,25 @@ function renderSrcPill(){
   const pill=document.getElementById('srcPill'); if(!pill) return;
   if(!SET.all.length){ pill.innerHTML='<span class="dot warn"></span><span>热点源状态未知</span>'; return; }
   const off=SET.dailyhot!=='online';
-  pill.innerHTML=`<span class="dot${off?' warn':''}"></span><span>热点源 ${SET.sources.length}/${SET.all.length} 启用 · 聚合${off?'离线':'在线'}</span>`;
+  const bocha=SET.research&&SET.research.keys&&SET.research.keys.bocha;
+  pill.innerHTML=`<span class="dot${off?' warn':''}"></span><span>热点源 ${SET.sources.length}/${SET.all.length} · 聚合${off?'离线':'在线'}${bocha?' · 博查已接':''}</span>`;
+  pill.title=off?'DailyHotApi 聚合服务离线：仅百度/头条可抓（二者不受影响）':'DailyHotApi 聚合服务运行中';
 }
+
+// 侧栏源状态轻量轮询（每60秒）：只更新 pill 数据，不重渲设置页/芯片，避免打断正在进行的操作
+async function refreshSrcPill(){
+  try{
+    const res=await fetch('/settings');
+    if(!res.ok) return;
+    const d=await res.json();
+    SET.sources=d.hotspot.sources||SET.sources;
+    SET.all=d.hotspot.all_sources||SET.all;
+    SET.dailyhot=(d.services||{}).dailyhot||SET.dailyhot;
+    SET.research=d.research||SET.research;
+  }catch(e){ return; }   // FlowX 本体不可达时保持原显示
+  renderSrcPill();
+}
+setInterval(refreshSrcPill, 60000);
 
 async function toggleSource(code){
   const has=SET.sources.includes(code);
