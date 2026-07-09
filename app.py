@@ -14,11 +14,13 @@ import json
 import os
 import time
 
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from config import load_env, load_settings, enabled_tracks, get_account
+from config import (load_env, load_settings, enabled_tracks, get_account,
+                    load_tracks, set_hotspot_sources, set_track_enabled)
 from hotspot import fetch_all, classify
 from generate import write, pick_cover
 from generate.illustrate import scrape_cover_pool, download_valid_image, save_image_bytes
@@ -188,6 +190,83 @@ def recheck_article(req: RecheckRequest):
 def get_articles(limit: int = 500):
     """取稿件库里的稿件（新→旧）。"""
     return {"articles": store.all_articles(limit=limit)}
+
+
+# ================= 设置读写（key 绝不经接口读写，只返回是否已配的 bool）=================
+ALL_HOT_SOURCES = [("baidu", "百度"), ("toutiao", "今日头条"), ("douyin", "抖音"), ("weibo", "微博"),
+                   ("zhihu", "知乎"), ("bilibili", "B站"), ("36kr", "36氪"), ("thepaper", "澎湃")]
+_DIRECT_SOURCES = {"baidu", "toutiao"}  # 官方直抓，不依赖聚合服务
+
+
+def _key_configured(env_name: str) -> bool:
+    """key 是否已配置：非空且不是中文占位符。只返回 bool，绝不返回 key 值。"""
+    v = os.environ.get(env_name, "")
+    return bool(v) and v.isascii()
+
+
+@app.get("/settings")
+def get_app_settings():
+    s = load_settings()
+    h = s.get("hotspot", {})
+    r = s.get("research", {})
+    base_url = h.get("base_url", "")
+
+    dailyhot = "offline"
+    if base_url:
+        try:  # 通了就算在线（个别源上游 500 是另一回事）
+            requests.get(f"{base_url.rstrip('/')}/douyin", timeout=1)
+            dailyhot = "online"
+        except Exception:
+            dailyhot = "offline"
+
+    tracks = [{"key": k, "name": v.get("name", k), "enabled": bool(v.get("enabled")),
+               "keywords": v.get("keywords", [])} for k, v in load_tracks().items()]
+    return {
+        "hotspot": {
+            "sources": h.get("sources", []),
+            "base_url": base_url,
+            "all_sources": [{"code": c, "name": n, "direct": c in _DIRECT_SOURCES}
+                            for c, n in ALL_HOT_SOURCES],
+        },
+        "research": {
+            "providers": r.get("providers") or [r.get("provider", "tavily")],
+            "min_results": r.get("min_results", 3),
+            "min_chars": r.get("min_chars", 300),
+            "keys": {"tavily": _key_configured("TAVILY_API_KEY"),
+                     "bocha": _key_configured("BOCHA_API_KEY")},
+        },
+        "tracks": tracks,
+        "services": {"dailyhot": dailyhot},
+    }
+
+
+class SourcesRequest(BaseModel):
+    sources: list[str]
+
+
+@app.post("/settings/sources")
+def post_settings_sources(req: SourcesRequest):
+    """写回启用的热点来源（只改 settings.yaml 的 hotspot.sources，按固定顺序保序）。"""
+    valid = [c for c, _ in ALL_HOT_SOURCES]
+    sources = sorted({s for s in req.sources if s in valid}, key=valid.index)
+    if not sources:
+        raise HTTPException(status_code=400, detail="至少保留一个热点来源")
+    set_hotspot_sources(sources)
+    return {"ok": True, "sources": sources}
+
+
+class TrackToggleRequest(BaseModel):
+    key: str
+    enabled: bool
+
+
+@app.post("/settings/tracks")
+def post_settings_tracks(req: TrackToggleRequest):
+    """改 tracks.yaml 里某赛道的 enabled（只改开关，不动 keywords/prompt）。"""
+    if req.key not in load_tracks():
+        raise HTTPException(status_code=404, detail=f"赛道 {req.key} 不存在")
+    set_track_enabled(req.key, req.enabled)
+    return {"ok": True, "key": req.key, "enabled": req.enabled}
 
 
 class ReviseRequest(BaseModel):
