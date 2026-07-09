@@ -161,7 +161,39 @@ button{font-family:inherit;cursor:pointer}
 .set-sec{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
 .set-sec h2{font-family:var(--disp);font-weight:700;font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:9px}
 .set-sec .sub{color:var(--ink-soft);font-size:12.5px;margin:0 0 16px}
+.chain{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.node{display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);padding:12px 16px;min-width:150px}
+.node .nt{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px}
+.node .nd{font-size:11.5px;color:var(--ink-soft)}
+.node.primary{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-tint)}
+.node .tag{font-size:10px;font-weight:700;letter-spacing:.06em;border-radius:5px;padding:1px 6px;text-transform:uppercase}
+.node .tag.free{background:var(--ok-bg);color:var(--ok)}
+.node .tag.paid{background:var(--warn-bg);color:var(--warn)}
+.chain .flow{color:var(--brand);font-family:var(--disp);font-weight:800;font-size:18px}
+.thresh{display:flex;gap:22px;flex-wrap:wrap;padding-top:14px;border-top:1px dashed var(--line)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;color:var(--ink-soft)}
+.field .val{display:flex;align-items:center;gap:10px}
+.field input[type=range]{accent-color:var(--brand);width:150px}
+.field .num{font-family:var(--mono);font-weight:700;color:var(--brand-deep);font-size:14px;min-width:40px}
+.keyrow{display:flex;align-items:center;gap:10px;font-size:13px;padding:8px 0;flex-wrap:wrap}
+.keyrow .kn{font-weight:600;width:90px}
+.keyok{color:var(--ok);font-size:12px;display:inline-flex;gap:5px;align-items:center}
+.keyok.miss{color:var(--warn)}
+.trackline{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line-soft)}
+.trackline:first-of-type{border-top:none}
+.trackline .tn{font-weight:600;width:60px}
+.trackline .kw{flex:1;color:var(--ink-soft);font-size:12.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mini-sw{width:40px;height:22px;border-radius:20px;background:#DccFbb;position:relative;flex:none;cursor:pointer}
+.mini-sw.on{background:var(--brand)}
+.mini-sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+.mini-sw.on::after{left:20px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);background:var(--surface-2);border:1px dashed var(--line);border-radius:10px;padding:12px 16px;margin-top:6px}
+.legend b{color:var(--ink)}
+.swatch{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:5px}
 .placeholder-note{color:var(--ink-faint);font-size:12.5px;font-style:italic}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#F4ECDD;padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:0 10px 30px rgba(42,35,30,.3);z-index:99;opacity:0;pointer-events:none;transition:.25s}
+.toast.show{opacity:1}
 
 /* 收窄时把左栏压成图标条，避免塌成竖排 */
 @media (max-width:880px){
@@ -192,14 +224,14 @@ button{font-family:inherit;cursor:pointer}
     <button class="navitem gear" data-v="settings"><span class="n">⚙</span><span class="tx"><b>设置</b><span>来源 · 搜索 · 赛道 · 账号</span></span></button>
 
     <div class="foot">
-      <div class="srcpill"><span class="dot"></span><span>百度/头条直抓 · 其余聚合源</span></div>
+      <div class="srcpill" id="srcPill"><span class="dot"></span><span>热点源状态读取中…</span></div>
     </div>
   </aside>
 
   <!-- ============ 右侧工作区 ============ -->
   <main class="main">
     <div class="content">
-      <div class="mockbar"><div class="in">🔌 v4 桌面版 · 选题 / 生产·审核 / 稿库已接真实数据 · 来源开关与设置页（R2）、发布动作（1c-2）待接入</div></div>
+      <div class="mockbar"><div class="in">🔌 v4 桌面版 · 选题 / 生产·审核 / 稿库 / 设置均已接真实数据（来源与赛道开关即改即存） · 发布动作（1c-2）待接入</div></div>
 
       <!-- ========== 选题 ========== -->
       <section class="view on" id="pick">
@@ -209,17 +241,8 @@ button{font-family:inherit;cursor:pointer}
         </div>
 
         <div class="panel">
-          <div class="phead"><div class="t"><span class="barmark"></span>热点来源</div><span class="muted">来源开关将在「设置」(R2) 接入，当前抓取范围由 settings.yaml 决定</span></div>
-          <div class="chips" id="srcChips">
-            <label class="chip on"><span class="sw"></span>百度 <span class="badge">直抓</span></label>
-            <label class="chip on"><span class="sw"></span>今日头条 <span class="badge">直抓</span></label>
-            <label class="chip on"><span class="sw"></span>抖音</label>
-            <label class="chip err"><span class="sw"></span>微博 <span class="badge err">上游异常</span></label>
-            <label class="chip on"><span class="sw"></span>知乎</label>
-            <label class="chip on"><span class="sw"></span>B站</label>
-            <label class="chip on"><span class="sw"></span>36氪</label>
-            <label class="chip on"><span class="sw"></span>澎湃</label>
-          </div>
+          <div class="phead"><div class="t"><span class="barmark"></span>热点来源 <span class="muted">（真开关：点谁抓谁，改动即保存）</span></div><span class="muted" id="srcHint">聚合服务状态见「设置」</span></div>
+          <div class="chips" id="srcChips"><span class="muted">读取来源配置…</span></div>
         </div>
 
         <div class="panel">
@@ -273,14 +296,10 @@ button{font-family:inherit;cursor:pointer}
         <div class="cards" id="artCards"><div class="placeholder-note">加载中…</div></div>
       </section>
 
-      <!-- ========== 设置（R2 构建，先占位） ========== -->
+      <!-- ========== 设置 ========== -->
       <section class="view" id="settings">
         <div class="viewhead"><div><p class="eyebrow">Configuration</p><h1>设置</h1><p>设一次、偶尔调；日常工作流里不再出现这些开关</p></div></div>
-        <div class="set-sec">
-          <h2>🛠 设置页将在 R2 构建</h2>
-          <p class="sub">规划中的分区：热点来源开关（含聚合服务状态）/ 搜索素材兜底链与阈值 / 赛道管理（关键词·风格）/ 账号与平台。</p>
-          <p class="placeholder-note">当前这些配置由项目根目录的 settings.yaml、tracks.yaml、accounts.yaml 决定，改文件即生效。</p>
-        </div>
+        <div id="setBody"><div class="placeholder-note">读取配置…</div></div>
       </section>
 
     </div>
@@ -293,13 +312,13 @@ function show(v){
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id===v));
   document.querySelectorAll('.navitem').forEach(s=>s.classList.toggle('on',s.dataset.v===v));
   window.scrollTo({top:0});
-  if(v==='store') loadArticles();   // 进稿库即拉真库
+  if(v==='store') loadArticles();      // 进稿库即拉真库
+  if(v==='settings') loadSettingsData(); // 进设置即刷新配置与服务状态
 }
 document.querySelectorAll('.navitem').forEach(s=>s.addEventListener('click',()=>show(s.dataset.v)));
 
-// 芯片开关：赛道芯片是真开关（抓取时收集 data-key）；来源芯片本步仅视觉（R2 接入）
-document.querySelectorAll('#pick .chip').forEach(c=>{
-  if(c.querySelector('.badge.err')) return;   // 异常源不给开
+// 赛道芯片 = 本次抓取范围（会话内选择，不落盘）；来源芯片由 loadSettingsData 动态渲染（真开关）
+document.querySelectorAll('#pick .chip.track').forEach(c=>{
   c.addEventListener('click',()=>c.classList.toggle('on'));
 });
 
@@ -310,6 +329,134 @@ function escapeHtml(s){
 function srcLabel(s){
   const m={baidu:'百度',toutiao:'头条',douyin:'抖音',weibo:'微博',zhihu:'知乎',bilibili:'B站','36kr':'36氪',thepaper:'澎湃'};
   return m[s]||escapeHtml(s||'');
+}
+
+// ================= 设置：读取/回写（选题页与设置页的来源开关共用同一份状态）=================
+let SET={sources:[],all:[],dailyhot:'unknown',research:null,tracks:[]};
+let _toastT;
+function toast(msg){
+  let el=document.getElementById('toast');
+  if(!el){el=document.createElement('div');el.id='toast';el.className='toast';document.body.appendChild(el);}
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_toastT); _toastT=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+async function loadSettingsData(){
+  try{
+    const res=await fetch('/settings');
+    if(!res.ok) throw new Error('请求失败：'+res.status);
+    const d=await res.json();
+    SET={sources:d.hotspot.sources||[], all:d.hotspot.all_sources||[],
+         dailyhot:(d.services||{}).dailyhot||'unknown', research:d.research||null, tracks:d.tracks||[]};
+  }catch(e){
+    const box=document.getElementById('setBody');
+    if(box) box.innerHTML=`<div class="placeholder-note">读取配置失败：${escapeHtml(e.message)}</div>`;
+  }
+  renderSrcPill(); renderSettingsView(); renderSourceChips();
+}
+
+function srcChipHtml(s){
+  const on=SET.sources.includes(s.code);
+  return `<label class="chip${on?' on':''}" onclick="toggleSource('${s.code}')"><span class="sw"></span>${escapeHtml(s.name)}${s.direct?' <span class="badge">直抓</span>':''}</label>`;
+}
+function renderSourceChips(){
+  if(!SET.all.length) return;
+  const html=SET.all.map(srcChipHtml).join('');
+  const a=document.getElementById('srcChips'); if(a) a.innerHTML=html;
+  const b=document.getElementById('setSrcChips'); if(b) b.innerHTML=html;
+}
+function renderSrcPill(){
+  const pill=document.getElementById('srcPill'); if(!pill) return;
+  if(!SET.all.length){ pill.innerHTML='<span class="dot warn"></span><span>热点源状态未知</span>'; return; }
+  const off=SET.dailyhot!=='online';
+  pill.innerHTML=`<span class="dot${off?' warn':''}"></span><span>热点源 ${SET.sources.length}/${SET.all.length} 启用 · 聚合${off?'离线':'在线'}</span>`;
+}
+
+async function toggleSource(code){
+  const has=SET.sources.includes(code);
+  const next=has?SET.sources.filter(c=>c!==code):SET.sources.concat(code);
+  if(!next.length){ toast('至少保留一个热点来源'); return; }
+  const prev=SET.sources;
+  SET.sources=next; renderSourceChips(); renderSrcPill();   // 乐观更新，失败回滚
+  try{
+    const res=await fetch('/settings/sources',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sources:next})});
+    const d=await res.json();
+    if(!res.ok||!d.ok) throw new Error(d.detail||d.error||('请求失败：'+res.status));
+    SET.sources=d.sources; renderSourceChips(); renderSrcPill();
+    toast(`已${has?'关闭':'开启'}「${srcLabel(code)}」· 下次抓取生效`);
+  }catch(e){
+    SET.sources=prev; renderSourceChips(); renderSrcPill();
+    toast('保存失败，已还原：'+e.message);
+  }
+}
+
+async function toggleTrack(key, el){
+  const to=!el.classList.contains('on');
+  el.classList.toggle('on',to);   // 乐观更新，失败回滚
+  const t=SET.tracks.find(x=>x.key===key);
+  try{
+    const res=await fetch('/settings/tracks',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key,enabled:to})});
+    const d=await res.json();
+    if(!res.ok||!d.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    if(t) t.enabled=to;
+    toast(`赛道「${t?t.name:key}」已${to?'开启':'关闭'} · 下次抓取生效`);
+  }catch(e){
+    el.classList.toggle('on',!to);
+    toast('保存失败，已还原：'+e.message);
+  }
+}
+
+function renderSettingsView(){
+  const box=document.getElementById('setBody');
+  if(!box||!SET.all.length) return;
+  const R=SET.research||{providers:[],min_results:'-',min_chars:'-',keys:{}};
+  const provNodes=(R.providers||[]).map((p,i)=>{
+    const isT=p!=='bocha';
+    return `<div class="node${i===0?' primary':''}"><div class="nt">${isT?'Tavily':'博查'} <span class="tag ${isT?'free':'paid'}">${isT?'免费':'付费'}${i===0?'优先':'兜底'}</span></div><div class="nd">${i===0?'先用它，够好就停':'上一级不达标才启用'}</div></div>`;
+  }).join('<span class="flow">→</span>');
+  const keyRow=(name,label)=>{
+    const ok=(R.keys||{})[name];
+    return `<div class="keyrow"><span class="kn">${label}</span><span class="keyok${ok?'':' miss'}"><span class="dot${ok?'':' warn'}"></span>${ok?'已配置':'未配置（填 .env）'}</span></div>`;
+  };
+  const dailyOff=SET.dailyhot!=='online';
+  box.innerHTML=`
+    <div class="set-sec">
+      <h2>🛰 热点来源</h2>
+      <p class="sub">开关各平台热榜，改动即写回配置、下次抓取生效。百度/头条为官方直抓，聚合服务离线也能出。</p>
+      <div class="keyrow"><span class="kn">聚合服务</span><span class="keyok${dailyOff?' miss':''}"><span class="dot${dailyOff?' warn':''}"></span>DailyHotApi ${dailyOff?'离线':'运行中'}</span><span class="muted" style="margin-left:auto">${dailyOff?'离线时仅百度/头条可抓，二者不受影响':'127.0.0.1:6688'}</span></div>
+      <div class="chips" id="setSrcChips" style="margin-top:12px"></div>
+    </div>
+    <div class="set-sec">
+      <h2>🔎 搜索素材 <span class="muted" style="font-weight:400;font-size:12.5px">给文章喂原料 · 自动按顺序，不用手选</span></h2>
+      <p class="sub">优先用免费的 Tavily；结果太少/太薄/报错时自动回退博查。既保效果又控成本。</p>
+      <div class="chain">${provNodes}</div>
+      <div class="thresh">
+        <div class="field"><label>回退触发 · 最少条数</label><div class="val"><input type="range" min="1" max="10" value="${R.min_results}" disabled title="在 settings.yaml 的 research.min_results 修改（界面写回后续接入）"><span class="num">${R.min_results}</span></div></div>
+        <div class="field"><label>回退触发 · 素材最少字数</label><div class="val"><input type="range" min="100" max="1500" step="50" value="${R.min_chars}" disabled title="在 settings.yaml 的 research.min_chars 修改（界面写回后续接入）"><span class="num">${R.min_chars}</span></div></div>
+      </div>
+      <div style="margin-top:14px">${keyRow('tavily','Tavily Key')}${keyRow('bocha','博查 Key')}</div>
+    </div>
+    <div class="set-sec">
+      <h2>🎯 赛道管理 <span class="muted" style="font-weight:400;font-size:12.5px">开关 · 关键词</span></h2>
+      <p class="sub">决定热点如何归类，关闭的赛道抓取时不再出现。（关键词与写作风格在 tracks.yaml 里改）</p>
+      ${SET.tracks.map(t=>`<div class="trackline"><span class="tn">${escapeHtml(t.name)}</span><span class="kw">${t.keywords.slice(0,8).map(escapeHtml).join(' · ')}${t.keywords.length>8?' …':''}</span><span class="mini-sw${t.enabled?' on':''}" onclick="toggleTrack('${escapeHtml(t.key)}',this)"></span></div>`).join('')||'<p class="placeholder-note">tracks.yaml 里还没有赛道</p>'}
+    </div>
+    <div class="set-sec">
+      <h2>👤 账号与平台 <span class="muted" style="font-weight:400;font-size:12.5px">多平台 · 多账号</span></h2>
+      <p class="sub">今日头条 / 百家号 / 小红书 / X …，每个平台可管理多个账号。</p>
+      <p class="placeholder-note">规划中：随「发布」功能一起接入（1c-2 及之后）。届时在此登录账号、管理登录态。</p>
+    </div>
+    <div class="set-sec" style="background:var(--surface-2)">
+      <h2 style="font-size:14px">🎨 配色约定（设计说明）</h2>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--brand)"></span><b>品牌砖红</b>：只用于外壳——导航、按钮、强调</span>
+        <span><span class="swatch" style="background:var(--stop)"></span><b>告警红</b>：只用于"红档/拦截"，更亮 + 配 ⛔ 图标</span>
+        <span><span class="swatch" style="background:var(--ok)"></span>质检合格</span>
+        <span><span class="swatch" style="background:var(--warn)"></span>质检待确认</span>
+      </div>
+    </div>`;
 }
 
 // ================= 选题：抓取 → 渲染 → 勾选 =================
@@ -607,6 +754,7 @@ function ftab(t,s){
 }
 
 updateSelectedBar();
+loadSettingsData();   // 启动即拉配置：渲染来源芯片 + 侧栏源状态
 </script>
 </body>
 </html>
