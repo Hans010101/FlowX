@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from config import load_env, load_settings, enabled_tracks, get_account
 from hotspot import fetch_all, classify
 from generate import write, pick_cover
-from generate.illustrate import scrape_cover
+from generate.illustrate import scrape_cover_pool, download_valid_image, save_image_bytes
 from generate.revise import revise
 from research import search_results, build_material, search_with_fallback
 from publishers import get_publisher, Article
@@ -140,17 +140,22 @@ def generate_articles(req: GenerateRequest):
             results.append({"ok": False, "title": item.title, "error": str(e)})
             continue
 
+        img_candidates, image_idx = None, None
         if track_conf["name"] in skip_img_tracks:
             image_rel = None
         elif img_mode == "scrape":
             urls = [r.get("url") for r in search_res if r.get("url")]
-            image_rel = scrape_cover(urls, article.title)
+            image_rel, pool, idx = scrape_cover_pool(urls, article.title)
+            if pool:
+                img_candidates = json.dumps(pool, ensure_ascii=False)
+                image_idx = idx if idx >= 0 else None
         else:
             image_rel = pick_cover(article.title, article.content)
 
         art_item = {
             "title": article.title, "body": article.content, "image": image_rel,
             "track": track_conf["name"], "source": item.source,
+            "img_candidates": img_candidates, "image_idx": image_idx,
             "time": time.strftime("%Y-%m-%d %H:%M"),
         }
         status = _apply_qc(art_item)
@@ -212,6 +217,7 @@ def revise_article(req: ReviseRequest):
     new_item = {
         "title": revised.title, "body": revised.content, "image": art.get("image"),
         "track": art.get("track", ""), "source": art.get("source", ""),
+        "img_candidates": art.get("img_candidates"), "image_idx": art.get("image_idx"),  # 保住换图候选池
         "time": art.get("created_at"),  # 沿用原创建时间
     }
     status = _apply_qc(new_item)

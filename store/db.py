@@ -29,18 +29,21 @@ def _conn():
             created_at  TEXT,
             qc_score    INTEGER,
             qc_level    TEXT,
-            qc_problems TEXT
+            qc_problems TEXT,
+            img_candidates TEXT,
+            image_idx   INTEGER
         )
     """)
-    # 旧库迁移：缺 qc_* 列则补
+    # 旧库迁移：缺列则补
     try:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
-        for col, typ in (("qc_score", "INTEGER"), ("qc_level", "TEXT"), ("qc_problems", "TEXT")):
+        for col, typ in (("qc_score", "INTEGER"), ("qc_level", "TEXT"), ("qc_problems", "TEXT"),
+                         ("img_candidates", "TEXT"), ("image_idx", "INTEGER")):
             if col not in cols:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} {typ}")
         conn.commit()
     except Exception as e:
-        print(f"  ⚠️ 稿件库 qc 列迁移失败（不影响旧功能）：{e}")
+        print(f"  ⚠️ 稿件库列迁移失败（不影响旧功能）：{e}")
     return conn
 
 
@@ -57,17 +60,20 @@ def is_processed(title: str) -> bool:
 
 
 def save_article(item: dict, status: str = "未发"):
-    """存一篇稿件。item 需含 title/body/image/track/source，可带 qc_score/qc_level/qc_problems（不带存 NULL）。"""
+    """存一篇稿件。item 需含 title/body/image/track/source，
+    可带 qc_score/qc_level/qc_problems/img_candidates/image_idx（不带存 NULL）。"""
     conn = _conn()
     try:
         conn.execute(
             "INSERT OR REPLACE INTO articles "
-            "(id,title,body,image,track,source,status,created_at,qc_score,qc_level,qc_problems) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "(id,title,body,image,track,source,status,created_at,qc_score,qc_level,qc_problems,"
+            "img_candidates,image_idx) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (_aid(item["title"]), item["title"], item.get("body", ""), item.get("image"),
              item.get("track", ""), item.get("source", ""), status,
              item.get("time") or time.strftime("%Y-%m-%d %H:%M"),
-             item.get("qc_score"), item.get("qc_level"), item.get("qc_problems")))
+             item.get("qc_score"), item.get("qc_level"), item.get("qc_problems"),
+             item.get("img_candidates"), item.get("image_idx")))
         conn.commit()
     finally:
         conn.close()

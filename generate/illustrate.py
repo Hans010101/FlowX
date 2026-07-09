@@ -109,80 +109,156 @@ def pick_cover(title: str, body: str = "", out_dir: str = "output/images") -> st
     return os.path.join("images", fn)
 
 
-# ========== 抓报道原图（og:image）==========
+# ========== 抓报道原图（优先级 + 过滤 + 候选池）==========
+# 优先级：og:image / twitter:image 最高 → 正文区(article/main)内图片次之 → 页面其它图片兜底。
+# 过滤：URL 特征(logo/banner/ad…)、宽高<300、宽高比>3:1 的细长条。
+# 产出：有序候选池（主图=第一张有效的），其余留给 /reimage「换图」依次用。
 import re
+import struct
 from urllib.parse import urljoin
+
+MIN_BYTES = 15000               # <15KB 多半是logo/缩略图
+MAX_BYTES = 20 * 1024 * 1024    # 20M 上限（头条限制）
+MIN_DIM = 300                   # 宽或高小于此的排除（拿不到尺寸则跳过该规则）
+MAX_ASPECT = 3.0                # 宽高比超过 3:1 / 1:3 视为 banner/装饰条
 
 _OG_PATTERNS = [
     r'<meta[^>]+property=["\']og:image(?::url)?["\'][^>]+content=["\']([^"\']+)["\']',
     r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image(?::url)?["\']',
     r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
 ]
+# URL 特征黑名单（按路径分段匹配，避免 upload/load 误伤 ad）
+_IMG_URL_BAD = re.compile(
+    r'(?:^|[/_\-.])(logos?|icons?|avatars?|sprites?|placeholder|banners?|ads?|adv|'
+    r'qrcode|favicon|spacer|blank|default|btn|button|emoji|watermark)(?=$|[/_\-.@?])', re.I)
+_IMG_TAG_RE = re.compile(
+    r'<img[^>]+(?:data-original|data-src|src)=["\'](https?://[^"\']+?\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', re.I)
 
 
-def _extract_og_image(html: str, base_url: str) -> str | None:
-    for pat in _OG_PATTERNS:
-        m = re.search(pat, html, re.I)
-        if m:
-            return urljoin(base_url, m.group(1).strip())
+def _img_size(data: bytes) -> tuple[int, int] | None:
+    """从文件头读宽高（PNG/JPEG/GIF/WebP），拿不到返回 None（不报错）。"""
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return struct.unpack(">II", data[16:24])
+        if data[:3] == b"GIF":
+            return struct.unpack("<HH", data[6:10])
+        if data[:2] == b"\xff\xd8":  # JPEG：扫 SOF 段
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                              0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                    return w, h
+                i += 2 + struct.unpack(">H", data[i + 2:i + 4])[0]
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            fmt = data[12:16]
+            if fmt == b"VP8X":
+                return (int.from_bytes(data[24:27], "little") + 1,
+                        int.from_bytes(data[27:30], "little") + 1)
+            if fmt == b"VP8 ":
+                return (int.from_bytes(data[26:28], "little") & 0x3FFF,
+                        int.from_bytes(data[28:30], "little") & 0x3FFF)
+            if fmt == b"VP8L":
+                b0, b1, b2, b3 = data[21:25]
+                return (((b1 & 0x3F) << 8 | b0) + 1,
+                        ((b3 & 0x0F) << 10 | b2 << 2 | (b1 & 0xC0) >> 6) + 1)
+    except Exception:
+        pass
     return None
 
 
-def _candidate_images(html: str, base_url: str) -> list[str]:
-    """从页面提取所有候选图片URL：og/twitter 主图 + 正文 <img>。"""
-    cands = []
+def _region(html: str, tag: str) -> str:
+    m = re.search(rf'<{tag}[^>]*>(.*?)</{tag}>', html, re.I | re.S)
+    return m.group(1) if m else ""
+
+
+def _page_candidates(html: str, base_url: str) -> list[str]:
+    """单个页面的有序候选：og/twitter → article/main 区内图 → 其它正文图；过 URL 黑名单、去重。"""
+    ordered = []
     for pat in _OG_PATTERNS:
-        m = re.search(pat, html, re.I)
-        if m:
-            cands.append(urljoin(base_url, m.group(1).strip()))
-    # 正文里的 img（含懒加载 data-src），只要常见图片格式
-    for m in re.finditer(
-            r'<img[^>]+(?:data-original|data-src|src)=["\'](https?://[^"\']+?\.(?:jpg|jpeg|png|webp)[^"\']*)["\']',
-            html, re.I):
-        cands.append(m.group(1))
-    seen, out = set(), []
-    for u in cands:
-        if u.startswith("http") and u not in seen:
-            seen.add(u)
-            out.append(u)
-    return out
+        for m in re.finditer(pat, html, re.I):
+            ordered.append(urljoin(base_url, m.group(1).strip()))
+    for region_tag in ("article", "main"):
+        seg = _region(html, region_tag)
+        if seg:
+            ordered.extend(m.group(1) for m in _IMG_TAG_RE.finditer(seg))
+            break
+    ordered.extend(m.group(1) for m in _IMG_TAG_RE.finditer(html))
+    out, seen = [], set()
+    for u in ordered:
+        if not u.startswith("http") or u in seen or _IMG_URL_BAD.search(u):
+            continue
+        seen.add(u)
+        out.append(u)
+    return out[:12]
 
 
-def scrape_cover(urls: list[str], title: str = "", out_dir: str = "output/images") -> str | None:
-    """访问报道链接，抓页面上文件最大（最清晰）的一张图；跳过logo和>20M。全失败返回None。"""
-    MIN_BYTES = 15000            # 小于15KB多半是logo/缩略图，跳过
-    MAX_BYTES = 20 * 1024 * 1024  # 20M 上限（头条限制）
-    for url in urls:
+def collect_candidates(urls: list[str]) -> list[str]:
+    """按报道链接顺序收集全部候选图 URL（有序去重）。"""
+    out, seen = [], set()
+    for url in urls[:5]:
         if not url:
             continue
         try:
             r = requests.get(url, headers=UA_HDR, timeout=12)
             r.raise_for_status()
-            candidates = _candidate_images(r.text, url)[:8]
         except Exception:
             continue
-        best_data, best_size = None, 0
-        for iu in candidates:
-            try:
-                ir = requests.get(iu, headers=UA_HDR, timeout=18)
-                if ir.status_code != 200:
-                    continue
-                if "image" not in ir.headers.get("content-type", "").lower():
-                    continue
-                data = ir.content
-                sz = len(data)
-                if sz < MIN_BYTES or sz > MAX_BYTES:
-                    continue
-                if sz > best_size:              # 挑文件最大的（通常最清晰）
-                    best_data, best_size = data, sz
-            except Exception:
-                continue
-        if best_data:
-            pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
-            fn = hashlib.md5((title + url).encode("utf-8")).hexdigest()[:10] + ".jpg"
-            with open(os.path.join(out_dir, fn), "wb") as f:
-                f.write(best_data)
-            print(f"  抓到报道配图（{best_size // 1024}KB，来自 {url[:40]}...）")
-            return os.path.join("images", fn)
-    print("  ⚠️ 没抓到合适的报道配图（将留空，可手动配）")
-    return None
+        for iu in _page_candidates(r.text, url):
+            if iu not in seen:
+                seen.add(iu)
+                out.append(iu)
+    return out
+
+
+def download_valid_image(iu: str) -> bytes | None:
+    """下载并校验一张候选图：content-type / 字节数 / 尺寸≥300 / 宽高比≤3:1。不合格返回 None。"""
+    try:
+        r = requests.get(iu, headers=UA_HDR, timeout=18)
+        if r.status_code != 200 or "image" not in r.headers.get("content-type", "").lower():
+            return None
+        data = r.content
+        if not (MIN_BYTES <= len(data) <= MAX_BYTES):
+            return None
+        size = _img_size(data)
+        if size:
+            w, h = size
+            if w < MIN_DIM or h < MIN_DIM:
+                return None
+            if w > h * MAX_ASPECT or h > w * MAX_ASPECT:
+                return None
+        return data
+    except Exception:
+        return None
+
+
+def save_image_bytes(data: bytes, key: str, out_dir: str = "output/images") -> str:
+    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
+    fn = hashlib.md5(key.encode("utf-8")).hexdigest()[:10] + ".jpg"
+    with open(os.path.join(out_dir, fn), "wb") as f:
+        f.write(data)
+    return os.path.join("images", fn)
+
+
+def scrape_cover_pool(urls: list[str], title: str = "",
+                      out_dir: str = "output/images") -> tuple[str | None, list[str], int]:
+    """抓报道配图：返回 (主图相对路径|None, 有序候选URL池, 主图在池中的索引|-1)。
+    主图 = 优先级排序后第一张通过校验的候选（不再"挑最大"）。"""
+    pool = collect_candidates(urls)
+    for i, iu in enumerate(pool):
+        data = download_valid_image(iu)
+        if data:
+            rel = save_image_bytes(data, title + iu, out_dir)
+            print(f"  抓到报道配图（{len(data) // 1024}KB，候选第{i + 1}/{len(pool)}张：{iu[:50]}...）")
+            return rel, pool, i
+    print(f"  ⚠️ 没抓到合适的报道配图（候选{len(pool)}张均未过校验，将留空，可换图/手动配）")
+    return None, pool, -1
+
+
+def scrape_cover(urls: list[str], title: str = "", out_dir: str = "output/images") -> str | None:
+    """向后兼容旧调用（run_daily 等）：只要主图。"""
+    return scrape_cover_pool(urls, title, out_dir)[0]
