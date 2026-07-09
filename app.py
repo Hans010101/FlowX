@@ -198,6 +198,23 @@ def get_articles(limit: int = 500):
     return {"articles": store.all_articles(limit=limit)}
 
 
+class StatusRequest(BaseModel):
+    status: str
+
+
+@app.post("/articles/{article_id}/status")
+def set_article_status(article_id: str, req: StatusRequest):
+    """手动流转稿件状态（同步进草稿箱后去平台发布，FlowX 感知不到，靠用户点「标记已发」）。
+    只改 status（复用 store.set_status 的 UPDATE），不触发重检、不动任何其它字段。"""
+    if req.status not in ("已发", "未发"):
+        raise HTTPException(status_code=400, detail="status 只接受「已发」或「未发」")
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == article_id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+    store.set_status(art["title"], req.status)
+    return {"ok": True, "id": article_id, "status": req.status}
+
+
 # ================= 文章预览页（只读）：干净的独立文章页，供 Wechatsync 等扩展提取同步 =================
 _ARTICLE_PAGE = """<!DOCTYPE html>
 <html lang="zh-CN">

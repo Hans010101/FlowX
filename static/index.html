@@ -616,11 +616,14 @@ function cardHtml(a, mode, delta){
   const syncBtn=(mode==='pub'&&k!=='fix')
     ?`<button class="btn primary sm" onclick="syncToPlatforms('${escapeHtml(a.id||'')}')" title="路1·手动：打开这篇的独立文章页，在该页点 Wechatsync 扩展图标同步">🚀 同步发布</button>`
      +`<button class="btn tool sm" onclick="autoSyncArticle('${escapeHtml(a.id||'')}',this)" title="路2·自动：后端调 wechatsync CLI，直接发进所选平台的草稿箱">⚡ 自动发布</button>`:'';
+  // 状态流转：未发→「✓ 标记已发」；已发→「↩ 改回未发」（平台后台手动发完回来标记）
+  const stBtn= mode!=='pub' ? ''
+             : k==='no' ? `<button class="btn ghost sm" onclick="markStatus('${escapeHtml(a.id||'')}','已发',this)" title="平台后台发布完成后，把这篇归档进「已发」">✓ 标记已发</button>`
+             : k==='yes' ? `<button class="btn ghost sm" onclick="markStatus('${escapeHtml(a.id||'')}','未发',this)" title="标错了可改回「未发」">↩ 改回未发</button>` : '';
   const holders= mode==='gen' ? (q.red?['手动修改']:['编辑'])
                : k==='fix' ? ['重新生成','手动修改']
-               : k==='no' ? ['编辑']
-               : k==='yes' ? ['查看链接'] : [];
-  const act=`<div class="actions">${syncBtn}${optBtn}${reimgBtn}${phBtns(holders,false)}</div>`;
+               : k==='no' ? ['编辑'] : [];
+  const act=`<div class="actions">${syncBtn}${optBtn}${reimgBtn}${stBtn}${phBtns(holders,false)}</div>`;
   const stopchip=q.red?`<span class="stopchip">⛔ 已拦截 · 待修复，不进待发</span>`:'';
   return `<article class="card${q.red?' red':''}" data-id="${escapeHtml(a.id||'')}" data-s="${k}">${covHtml(a.image)}<div class="in">
       <div class="row1"><span class="tkmini">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}${right}</div>
@@ -693,6 +696,23 @@ function syncToPlatforms(id){
   toast('已打开文章页 · 在新标签里点浏览器右上角的 Wechatsync 扩展图标，同步到目标平台');
 }
 
+// ================= 状态流转：标记已发 / 改回未发（只改 status，不动其它字段）=================
+async function markStatus(id, status, btn){
+  const orig=btn.textContent;
+  btn.disabled=true; btn.textContent='⏳ …';
+  try{
+    const res=await fetch(`/articles/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status})});
+    const d=await res.json();
+    if(!res.ok||!d.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    toast(`已把这篇标为「${status}」`);
+    loadArticles();   // 重拉：卡片移进对应 tab、计数同步更新
+  }catch(e){
+    btn.disabled=false; btn.textContent=orig;
+    toast('标记失败：'+e.message);
+  }
+}
+
 // ================= 自动发布（路2）：POST /sync → 后端调 wechatsync CLI 发进平台草稿箱 =================
 const SYNC_PLATFORMS=[['toutiao','头条'],['baijiahao','百家号'],['zhihu','知乎']];
 
@@ -730,7 +750,7 @@ async function runAutoSync(id, panel, okBtn){
     const hasUnknown=(d.results||[]).some(r=>r.status==='unknown');
     resBox.innerHTML=(d.results||[]).map(r=>{
       const name=PN[r.platform]||escapeHtml(r.platform);
-      if(r.status==='ok') return `<div style="color:var(--ok)">✓ ${name} 已进草稿箱${r.url?` · <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600">打开草稿</a>`:''}</div>`;
+      if(r.status==='ok') return `<div style="color:var(--ok)">✓ ${name} 已进草稿箱${r.url?` · <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600">打开草稿</a>`:''} · 去平台后台发布后，记得点「✓ 标记已发」</div>`;
       if(r.status==='fail') return `<div style="color:var(--stop)">✗ ${name} 失败（详见原始输出）</div>`;
       return `<div style="color:var(--ink-soft)">? ${name} 结果未识别（见原始输出）</div>`;
     }).join('')
