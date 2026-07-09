@@ -92,7 +92,13 @@ button{font-family:inherit;cursor:pointer}
 .btn.sm{padding:7px 13px;font-size:12.5px;border-radius:8px}
 .btn.tool{background:var(--surface);border:1px solid var(--brand);color:var(--brand);font-weight:600}
 .btn.tool:hover{background:var(--brand);color:#fff}
-.btn:disabled{opacity:.5}
+.btn:disabled{opacity:.5;cursor:progress}
+.btn:active:not(:disabled){transform:translateY(1px)}
+
+/* 键盘焦点可见（无障碍基线）：焦点环统一品牌色 */
+button:focus-visible,a:focus-visible,input:focus-visible,
+.chip:focus-visible,.tab:focus-visible,.mini-sw:focus-visible,
+.topic:focus-visible,.navitem:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 
 .trackgroup{margin-top:6px}
 .trackhd{display:flex;align-items:center;gap:10px;margin:22px 0 10px}
@@ -249,16 +255,16 @@ button{font-family:inherit;cursor:pointer}
         <div class="panel">
           <div class="phead"><div class="t"><span class="barmark"></span>赛道方向 <span class="muted">（开启想做的方向，抓取时只归类这些赛道）</span></div></div>
           <div class="chips">
-            <label class="chip track on" data-key="minsheng"><span class="sw"></span>民生</label>
-            <label class="chip track on" data-key="keji"><span class="sw"></span>科技</label>
-            <label class="chip track on" data-key="tiyu"><span class="sw"></span>体育</label>
-            <label class="chip track on" data-key="yule"><span class="sw"></span>娱乐</label>
-            <label class="chip"><span class="sw"></span>财企</label>
-            <label class="chip"><span class="sw"></span>时事</label>
-            <label class="chip"><span class="sw"></span>健康</label>
-            <label class="chip"><span class="sw"></span>教育</label>
-            <label class="chip"><span class="sw"></span>历史</label>
-            <label class="chip"><span class="sw"></span>美食</label>
+            <label class="chip track on" data-key="minsheng" tabindex="0"><span class="sw"></span>民生</label>
+            <label class="chip track on" data-key="keji" tabindex="0"><span class="sw"></span>科技</label>
+            <label class="chip track on" data-key="tiyu" tabindex="0"><span class="sw"></span>体育</label>
+            <label class="chip track on" data-key="yule" tabindex="0"><span class="sw"></span>娱乐</label>
+            <label class="chip" tabindex="0"><span class="sw"></span>财企</label>
+            <label class="chip" tabindex="0"><span class="sw"></span>时事</label>
+            <label class="chip" tabindex="0"><span class="sw"></span>健康</label>
+            <label class="chip" tabindex="0"><span class="sw"></span>教育</label>
+            <label class="chip" tabindex="0"><span class="sw"></span>历史</label>
+            <label class="chip" tabindex="0"><span class="sw"></span>美食</label>
           </div>
         </div>
 
@@ -358,7 +364,7 @@ async function loadSettingsData(){
 
 function srcChipHtml(s){
   const on=SET.sources.includes(s.code);
-  return `<label class="chip${on?' on':''}" onclick="toggleSource('${s.code}')"><span class="sw"></span>${escapeHtml(s.name)}${s.direct?' <span class="badge">直抓</span>':''}</label>`;
+  return `<label class="chip${on?' on':''}" tabindex="0" onclick="toggleSource('${s.code}')"><span class="sw"></span>${escapeHtml(s.name)}${s.direct?' <span class="badge">直抓</span>':''}</label>`;
 }
 function renderSourceChips(){
   if(!SET.all.length) return;
@@ -459,7 +465,7 @@ function renderSettingsView(){
     <div class="set-sec">
       <h2>🎯 赛道管理 <span class="muted" style="font-weight:400;font-size:12.5px">开关 · 关键词</span></h2>
       <p class="sub">决定热点如何归类，关闭的赛道抓取时不再出现。（关键词与写作风格在 tracks.yaml 里改）</p>
-      ${SET.tracks.map(t=>`<div class="trackline"><span class="tn">${escapeHtml(t.name)}</span><span class="kw">${t.keywords.slice(0,8).map(escapeHtml).join(' · ')}${t.keywords.length>8?' …':''}</span><span class="mini-sw${t.enabled?' on':''}" onclick="toggleTrack('${escapeHtml(t.key)}',this)"></span></div>`).join('')||'<p class="placeholder-note">tracks.yaml 里还没有赛道</p>'}
+      ${SET.tracks.map(t=>`<div class="trackline"><span class="tn">${escapeHtml(t.name)}</span><span class="kw">${t.keywords.slice(0,8).map(escapeHtml).join(' · ')}${t.keywords.length>8?' …':''}</span><span class="mini-sw${t.enabled?' on':''}" tabindex="0" role="switch" aria-checked="${t.enabled}" onclick="toggleTrack('${escapeHtml(t.key)}',this)"></span></div>`).join('')||'<p class="placeholder-note">tracks.yaml 里还没有赛道</p>'}
     </div>
     <div class="set-sec">
       <h2>👤 账号与平台 <span class="muted" style="font-weight:400;font-size:12.5px">多平台 · 多账号</span></h2>
@@ -531,7 +537,7 @@ function renderHotspots(data){
         const heat=it.hot?`<span class="heat">🔥 ${fmtHot(it.hot)}${srcs.length>1?` · ${srcs.length}平台`:''}</span>`
                   :(srcs.length>1?`<span class="heat">🔥 ${srcs.length} 平台同热</span>`:'');
         return `
-        <div class="topic" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
+        <div class="topic" tabindex="0" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
           <div class="tick">✓</div>
           <div class="body">
             <div class="ti">${escapeHtml(it.title)}</div>
@@ -860,6 +866,13 @@ function ftab(t,s){
   t.classList.add('on');
   document.querySelectorAll('#artCards .card').forEach(c=>{c.style.display=(s==='all'||c.dataset.s===s)?'':'none'});
 }
+
+// 键盘可达：芯片/迷你开关/热点条目 支持 Enter/空格 激活（与点击等效）
+document.addEventListener('keydown',e=>{
+  if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.chip,.mini-sw,.topic')){
+    e.preventDefault(); e.target.click();
+  }
+});
 
 updateSelectedBar();
 loadSettingsData();   // 启动即拉配置：渲染来源芯片 + 侧栏源状态
