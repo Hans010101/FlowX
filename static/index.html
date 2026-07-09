@@ -354,12 +354,14 @@ function renderHotspots(data){
     html+=trackEntries.map(([key,g])=>`
       <div class="grp">
         <div class="gh">${escapeHtml(g.name)} <span class="cnt">${g.items.length} 条</span></div>
-        ${g.items.map(it=>`
-          <div class="hot" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${escapeHtml(it.source||'')}">
+        ${g.items.map(it=>{
+          const srcTxt=(it.sources&&it.sources.length?it.sources:[it.source||'']).map(srcLabel).join('、');
+          return `
+          <div class="hot" onclick="tog(this)" data-track="${escapeHtml(key)}" data-url="${escapeHtml(it.url||'')}" data-source="${srcTxt}">
             <div class="ck"></div>
             <div class="ht">${escapeHtml(it.title)}</div>
-            <div class="src">${srcLabel(it.source)}</div>
-          </div>`).join('')}
+            <div class="src">${srcTxt}</div>
+          </div>`}).join('')}
       </div>`).join('');
   }
   if(data.unclassified && data.unclassified.length){
