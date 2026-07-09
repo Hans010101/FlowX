@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>内容工作流 · 界面原型</title>
+<style>
+:root{
+  --indigo:#6366f1; --violet:#8b5cf6; --deep:#1e1b4b; --deep2:#312e81;
+  --bg:#f6f7fb; --card:#fff; --ink:#1a1730; --sub:#6b6a82; --line:#eceaf4;
+  --green:#0f9d76; --amber:#c07a00; --grad:linear-gradient(135deg,#6366f1,#8b5cf6);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:15px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+/* ---------- 侧边栏 ---------- */
+.side{width:220px;background:linear-gradient(180deg,#1e1b4b,#2a2266);color:#cdc9ee;display:flex;flex-direction:column;padding:22px 14px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:10px;padding:6px 8px 22px}
+.logo .mark{width:34px;height:34px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;box-shadow:0 4px 14px rgba(139,92,246,.4)}
+.logo b{color:#fff;font-size:16px;letter-spacing:.3px}
+.logo span{font-size:11px;color:#8983c4;display:block;margin-top:1px}
+.nav{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.nav a{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:10px;color:#a9a4d6;text-decoration:none;font-size:14px;cursor:pointer;transition:.15s}
+.nav a .ic{width:18px;text-align:center;opacity:.9}
+.nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav a.on{background:var(--grad);color:#fff;box-shadow:0 6px 18px rgba(99,102,241,.45)}
+.nav .step{font-size:11px;color:#726dad;margin:16px 12px 6px;letter-spacing:1px}
+.side .foot{margin-top:auto;font-size:12px;color:#726dad;padding:10px 12px;border-top:1px solid rgba(255,255,255,.08)}
+.side .foot b{color:#b9b4e6;font-weight:500}
+/* ---------- 主区 ---------- */
+.main{flex:1;overflow:auto;height:100vh}
+.head{padding:26px 34px 0}
+.head h1{font-size:22px;font-weight:650}
+.head p{color:var(--sub);font-size:14px;margin-top:4px}
+.body{padding:22px 34px 60px}
+.page{display:none} .page.on{display:block;animation:fade .25s}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* 通用块 */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
+.panel h3{font-size:15px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.panel h3::before{content:"";width:4px;height:15px;border-radius:3px;background:var(--grad)}
+.btn{border:none;background:var(--grad);color:#fff;font-size:14px;font-weight:500;padding:10px 22px;border-radius:10px;cursor:pointer;box-shadow:0 6px 16px rgba(99,102,241,.35)}
+.btn:hover{filter:brightness(1.05)}
+.btn.ghost{background:#fff;color:var(--indigo);border:1px solid var(--line);box-shadow:none}
+.btn.sm{padding:6px 14px;font-size:13px;box-shadow:none}
+.btn.ghost.sm{background:#faf9fe}
+/* 选题设置 */
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.opt{flex:1;min-width:180px;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;cursor:pointer;transition:.15s}
+.opt.on{border-color:var(--indigo);background:linear-gradient(135deg,#f4f3ff,#faf5ff)}
+.opt .t{font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.opt .d{font-size:12px;color:var(--sub);margin-top:4px}
+.tag{font-size:11px;padding:2px 8px;border-radius:10px;background:#eef;color:var(--indigo)}
+.tag.free{background:#e7f7f0;color:var(--green)} .tag.paid{background:#fdf0e3;color:var(--amber)}
+.tracks{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:4px}
+.track{min-width:0}
+.track{border:1.5px solid var(--line);border-radius:12px;padding:14px 14px}
+.track .top{display:flex;align-items:center;justify-content:space-between}
+.track.min-w-0{}
+.track b{font-size:14px}
+.sw{width:38px;height:22px;border-radius:12px;background:#d9d6ea;position:relative;cursor:pointer;transition:.2s}
+.sw.on{background:var(--indigo)} .sw i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+.sw.on i{left:18px}
+.track .q{margin-top:10px;font-size:12px;color:var(--sub);display:flex;align-items:center;gap:8px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{width:22px;height:22px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-weight:600;color:var(--indigo)}
+.stepper span{min-width:16px;text-align:center;font-weight:600;color:var(--ink)}
+/* 选题筛选 */
+.grp{margin-bottom:18px}
+.grp .gh{font-size:13px;color:var(--sub);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.grp .gh .cnt{background:#eef;color:var(--indigo);border-radius:10px;padding:1px 8px;font-size:11px}
+.hot{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:.12s}
+.hot:hover{border-color:#cfc9f0}
+.hot.sel{border-color:var(--indigo);background:linear-gradient(135deg,#f6f5ff,#fcf6ff)}
+.ck{width:20px;height:20px;border:2px solid #cbc8e0;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+.hot.sel .ck{background:var(--indigo);border-color:var(--indigo)}
+.hot .ht{flex:1;font-weight:500}
+.hot .src{font-size:12px;color:var(--sub);background:#f3f2fa;padding:2px 9px;border-radius:8px}
+.barbtn{position:sticky;bottom:0;background:linear-gradient(0deg,var(--bg) 70%,transparent);padding:14px 0 4px;display:flex;align-items:center;gap:14px}
+.barbtn .n{color:var(--sub);font-size:13px}
+/* 生成预览 & 发布 卡片 */
+.gcard{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:18px}
+.gcard .cov{height:150px;background:linear-gradient(135deg,#e9e7fb,#f3e9fb);display:flex;align-items:center;justify-content:center;color:#9a95c8;font-size:13px}
+.gcard .gp{padding:16px 18px}
+.gcard .st{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.badge{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:500}
+.b-track{background:#eef;color:var(--indigo)} .b-no{background:#fdf0e3;color:var(--amber)} .b-yes{background:#e7f7f0;color:var(--green)}
+.gcard h4{font-size:17px;font-weight:650} .gcard .tx{color:#403c58;font-size:14px;margin-top:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.gcard .act{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tab{padding:7px 18px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px;color:var(--sub)}
+.tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.demoNote{background:#fff8ec;border:1px solid #f2d9a8;color:#8a6316;font-size:12.5px;padding:9px 14px;border-radius:9px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<!-- 侧边栏 -->
+<aside class="side">
+  <div class="logo"><div class="mark">流</div><div><b>头条工作流</b><span>content workflow</span></div></div>
+  <div class="nav" id="nav">
+    <div class="step">工作流程</div>
+    <a class="on" data-p="p1"><span class="ic">◎</span>① 选题设置</a>
+    <a data-p="p2"><span class="ic">☑</span>② 选题筛选</a>
+    <a data-p="p3"><span class="ic">✎</span>③ 生成预览</a>
+    <a data-p="p4"><span class="ic">✈</span>④ 发布管理</a>
+    <div class="step">其他</div>
+    <a data-p="p5"><span class="ic">⚙</span>系统设置</a>
+  </div>
+  <div class="foot">账号：<b>hans_toutiao</b><br>今日已发 <b>3</b> · 待发 <b>8</b></div>
+</aside>
+
+<!-- 主区 -->
+<div class="main">
+  <div class="head"><h1 id="ht">选题设置</h1><p id="hp">选择热点来源和赛道方向，然后抓取今天的热点</p></div>
+  <div class="body">
+    <div class="demoNote">🎨 这是界面原型 · 数据均为演示假数据 · 用于确认布局和风格，功能由 Claude Code 实现</div>
+
+    <!-- 页1 选题设置 -->
+    <div class="page on" id="p1">
+      <div class="panel"><h3>热点来源</h3>
+        <div class="row">
+          <div class="opt on"><div class="t">百度热榜 <span class="tag free">免费</span></div><div class="d">百度实时热搜榜</div></div>
+          <div class="opt on"><div class="t">今日头条热榜 <span class="tag free">免费</span></div><div class="d">头条站内热点</div></div>
+          <div class="opt"><div class="t">博查搜索源 <span class="tag paid">付费</span></div><div class="d">更全的聚合，需填 key</div></div>
+        </div>
+      </div>
+      <div class="panel"><h3>搜索素材源（给文章喂原料）</h3>
+        <div class="row">
+          <div class="opt on"><div class="t">Tavily <span class="tag free">免费</span></div><div class="d">每月1000次，默认</div></div>
+          <div class="opt"><div class="t">博查 <span class="tag paid">付费</span></div><div class="d">几分钱一次，内容更全</div></div>
+        </div>
+      </div>
+      <div class="panel"><h3>赛道方向与权重 <span style="font-size:12px;color:var(--sub);font-weight:400">（开启想要的，调每次篇数；默认开启你常用的4个）</span></h3>
+        <div class="tracks">
+          <div class="track"><div class="top"><b>民生</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>科技</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>财企</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>体育</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>娱乐</b><div class="sw on" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>时事</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>健康</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>教育</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>历史</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+          <div class="track"><div class="top"><b>美食</b><div class="sw" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+        </div>
+      </div>
+      <button class="btn" onclick="go('p2')">抓取今日热点 →</button>
+    </div>
+
+    <!-- 页2 选题筛选 -->
+    <div class="page" id="p2">
+      <div class="panel">
+        <div class="grp"><div class="gh">民生 <span class="cnt">3 条</span></div>
+          <div class="hot sel" onclick="tog(this)"><div class="ck">✓</div><div class="ht">养老金上调方案公布，这3类人多拿钱</div><div class="src">百度</div></div>
+          <div class="hot" onclick="tog(this)"><div class="ck"></div><div class="ht">多地公积金政策调整，首付比例下降</div><div class="src">头条</div></div>
+          <div class="hot" onclick="tog(this)"><div class="ck"></div><div class="ht">2026医保缴费标准出炉，比去年涨了</div><div class="src">百度</div></div>
+        </div>
+        <div class="grp"><div class="gh">科技·企业 <span class="cnt">2 条</span></div>
+          <div class="hot sel" onclick="tog(this)"><div class="ck">✓</div><div class="ht">iPhone 18 Pro Max电池曝光：5187mAh</div><div class="src">头条</div></div>
+          <div class="hot" onclick="tog(this)"><div class="ck"></div><div class="ht">某国产公司出海狂赚5个亿，半年报炸裂</div><div class="src">百度</div></div>
+        </div>
+        <div class="grp"><div class="gh">体育 <span class="cnt">2 条</span></div>
+          <div class="hot" onclick="tog(this)"><div class="ck"></div><div class="ht">王曼昱蒯曼3比1夺冠，创WTT历史</div><div class="src">头条</div></div>
+          <div class="hot" onclick="tog(this)"><div class="ck"></div><div class="ht">法国1-0险胜巴拉圭，晋级8强</div><div class="src">百度</div></div>
+        </div>
+        <div class="barbtn"><button class="btn" onclick="go('p3')">开始生成选中的 2 篇 →</button><span class="n">已选 2 篇 · 勾选你想写的即可</span></div>
+      </div>
+    </div>
+
+    <!-- 页3 生成预览 -->
+    <div class="page" id="p3">
+      <div class="gcard"><div class="cov">配图（自动抓报道图）</div><div class="gp">
+        <div class="st"><span class="badge b-track">民生</span></div>
+        <h4>养老金上调，这3类人每月多拿一笔钱</h4>
+        <div class="tx">人社部最新方案落地，2026年养老金总体上调4.2%。但真正多拿的是这三类人：缴费年限15年以上的、高龄退休人员、以及……具体到每个人能多领多少，关键看这几个系数。</div>
+        <div class="act"><button class="btn ghost sm">编辑</button><button class="btn ghost sm">重新生成</button><button class="btn ghost sm">换配图</button><button class="btn sm" onclick="go('p4')">确认，进入待发</button></div>
+      </div></div>
+      <div class="gcard"><div class="cov">配图（自动抓报道图）</div><div class="gp">
+        <div class="st"><span class="badge b-track">科技·企业</span></div>
+        <h4>iPhone 18 Pro Max电池5187mAh，苹果史上最大</h4>
+        <div class="tx">供应链曝光，国行版电池首次突破5000mAh，比上代多出364mAh。配上2nm的A20 Pro芯片，能效优化30%，续航翻倍不是梦。但美版可能更大，原因藏在SIM卡槽里……</div>
+        <div class="act"><button class="btn ghost sm">编辑</button><button class="btn ghost sm">重新生成</button><button class="btn ghost sm">换配图</button><button class="btn sm" onclick="go('p4')">确认，进入待发</button></div>
+      </div></div>
+    </div>
+
+    <!-- 页4 发布管理 -->
+    <div class="page" id="p4">
+      <div class="tabs"><div class="tab on" onclick="ftab(this,'all')">全部</div><div class="tab" onclick="ftab(this,'no')">未发</div><div class="tab" onclick="ftab(this,'yes')">已发</div></div>
+      <div class="gcard" data-s="no"><div class="gp">
+        <div class="st"><span class="badge b-no">未发</span><span class="badge b-track">民生</span></div>
+        <h4>养老金上调，这3类人每月多拿一笔钱</h4>
+        <div class="tx">人社部最新方案落地，2026年养老金总体上调4.2%。真正多拿的是这三类人……</div>
+        <div class="act"><button class="btn sm">立即发布</button><button class="btn ghost sm">定时发布</button><button class="btn ghost sm">编辑</button><button class="btn ghost sm">标记已发</button></div>
+      </div></div>
+      <div class="gcard" data-s="no"><div class="gp">
+        <div class="st"><span class="badge b-no">未发</span><span class="badge b-track">科技·企业</span></div>
+        <h4>iPhone 18 Pro Max电池5187mAh，苹果史上最大</h4>
+        <div class="tx">供应链曝光，国行版电池首次突破5000mAh，比上代多出364mAh……</div>
+        <div class="act"><button class="btn sm">立即发布</button><button class="btn ghost sm">定时发布</button><button class="btn ghost sm">编辑</button><button class="btn ghost sm">标记已发</button></div>
+      </div></div>
+      <div class="gcard" data-s="yes"><div class="gp">
+        <div class="st"><span class="badge b-yes">已发</span><span class="badge b-track">科技·企业</span></div>
+        <h4>"老头乐"闯美杀疯了！这家中国公司半年狂赚5个亿</h4>
+        <div class="tx">靠卖低速电动车出海的涛涛车业，交出一份炸裂半年报，净利润5.2亿至5.6亿……</div>
+        <div class="act"><span style="color:var(--sub);font-size:13px">已于 07-05 22:30 发布 · 展现 508 · 阅读 4</span></div>
+      </div></div>
+    </div>
+
+    <!-- 页5 系统设置 -->
+    <div class="page" id="p5">
+      <div class="panel"><h3>API 密钥</h3>
+        <div style="display:flex;flex-direction:column;gap:12px;max-width:520px">
+          <label style="font-size:13px;color:var(--sub)">DeepSeek（出文）<input style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px" value="sk-••••••••••••" ></label>
+          <label style="font-size:13px;color:var(--sub)">Tavily（搜索）<input style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px" value="tvly-••••••••" ></label>
+          <label style="font-size:13px;color:var(--sub)">Pexels（图库配图）<input style="width:100%;margin-top:5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px" value="••••••••" ></label>
+          <button class="btn" style="align-self:flex-start;margin-top:4px">保存</button>
+        </div>
+      </div>
+      <div class="panel"><h3>发布模式</h3>
+        <div class="row">
+          <div class="opt on"><div class="t">半自动（推荐）</div><div class="d">生成后我审核，手动/一键发布</div></div>
+          <div class="opt"><div class="t">全自动</div><div class="d">选题→生成→定时发，全程无人值守</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const titles={p1:['选题设置','选择热点来源和赛道方向，然后抓取今天的热点'],
+  p2:['选题筛选','勾选你想写的热点，选中的进入生成'],
+  p3:['生成预览','已生成的稿件，可编辑、重新生成、换图，确认后进入待发'],
+  p4:['发布管理','所有稿件在这里，未发/已发可筛选'],
+  p5:['系统设置','填写各家 API 密钥、选择发布模式']};
+function go(p){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  document.getElementById(p).classList.add('on');
+  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
+  document.getElementById('ht').textContent=titles[p][0];
+  document.getElementById('hp').textContent=titles[p][1];
+  document.querySelector('.main').scrollTop=0;
+}
+document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.p));
+function tog(el){el.classList.toggle('sel');el.querySelector('.ck').textContent=el.classList.contains('sel')?'✓':'';}
+function ftab(t,s){document.querySelectorAll('.tabs .tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  document.querySelectorAll('#p4 .gcard').forEach(c=>{c.style.display=(s==='all'||c.dataset.s===s)?'':'none'})}
+</script>
+</body>
+</html>

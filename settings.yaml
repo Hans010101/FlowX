@@ -1,0 +1,32 @@
+# settings.yaml —— 流水线运行参数
+
+pipeline:
+  mode: review              # review=生成本地网页手动发；publish=自动发头条（以后）
+  account: hans_toutiao
+  max_per_run: 8            # 每次总产出上限
+  # 每个赛道每次最多几篇（按实际阅读表现调权重：民生最多、科技次之、体育娱乐各1）
+  per_track_quota:
+    民生: 3
+    科技: 2
+    体育: 1
+    娱乐: 1
+  per_track_default: 1      # 未列出的赛道默认名额
+
+image:
+  # mode: scrape = 抓报道原图（贴合内容，体育也能拿到真实赛事图；有版权风险，个人自用）
+  #       pexels = 用免费图库（安全但可能不贴合）
+  mode: scrape
+  provider: pexels          # mode=pexels 时用，需 PEXELS_API_KEY
+  skip_tracks: []           # 这些赛道不自动配图、留空手动配（如想体育手动配，填 [体育]）
+
+hotspot:
+  provider: official        # 官方接口直抓，免Docker。可用：baidu, toutiao
+  sources: [baidu, toutiao]
+  # 按源分别设抓取条数：百度多抓、头条少抓（你要百度占比更大）
+  top_n:
+    baidu: 40
+    toutiao: 10
+  research_count: 5
+
+research:
+  provider: tavily          # 免费搜索，注册 https://tavily.com

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd 定时任务模板 —— 每天定时跑流水线
+  用法见 README『定时(launchd)』一节。
+  下面 3 处 /Users/hans/toutiao-auto 换成你的真实项目路径；
+  DEEPSEEK_API_KEY 填你的 key；StartCalendarInterval 改成你想要的时间。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hans.toutiao-auto</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/hans/toutiao-auto/.venv/bin/python</string>
+        <string>/Users/hans/toutiao-auto/run_daily.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/hans/toutiao-auto</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DEEPSEEK_API_KEY</key>
+        <string>在这里填你的_DeepSeek_API_key</string>
+    </dict>
+
+    <!-- 每天 9:00 跑一次；改 Hour/Minute 调时间 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/hans/toutiao-auto/logs/daily.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/hans/toutiao-auto/logs/daily.err.log</string>
+</dict>
+</plist>

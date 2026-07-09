@@ -1,0 +1,36 @@
+# accounts.yaml —— 账号配置（最多 5 个，人手一条）
+#
+# 每个账号一条，互相隔离：各自独立的 Chrome profile 目录 + 各自的平台。
+# 加人 = 加一条；加平台 = 把 platform 换成新值（需先在 publishers/ 里实现该平台）。
+#
+# 字段说明：
+#   name            账号别名（自己看的，唯一即可）
+#   platform        发哪个平台：toutiao / baijiahao(以后)
+#   profile_dir     该账号专属的 Chrome 数据目录（登录态存这里，别人共用会冲突）
+#   browser_channel 用哪个浏览器内核，chrome=系统真实 Chrome（推荐，指纹真实、风控低）
+#   headless        是否无界面。先用 false（看得见，安全好调）；上服务器全自动再改 true
+#   enabled         是否启用；临时停用某账号设 false
+
+accounts:
+  - name: hans_toutiao
+    platform: toutiao
+    profile_dir: profiles/hans_toutiao
+    browser_channel: chrome
+    headless: false
+    enabled: true
+
+  # ---- 示例：第 2~5 个账号照抄改名即可 ----
+  # - name: user2_toutiao
+  #   platform: toutiao
+  #   profile_dir: profiles/user2_toutiao
+  #   browser_channel: chrome
+  #   headless: false
+  #   enabled: true
+
+  # ---- 以后加百家号，长这样 ----
+  # - name: hans_baijiahao
+  #   platform: baijiahao
+  #   profile_dir: profiles/hans_baijiahao
+  #   browser_channel: chrome
+  #   headless: false
+  #   enabled: true
