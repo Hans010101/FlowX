@@ -100,6 +100,41 @@ def set_hotspot_sources(sources: list[str], path: str = "settings.yaml"):
     _dump_fallback(path, data)
 
 
+def set_auto_config(fields: dict, path: str = "settings.yaml"):
+    """写回 auto 段的若干字段：逐字段定点替换该行"值"的部分，行尾注释与其它内容原样保留。
+    字段名（enabled/schedule/count/min_level/tracks/platforms）在 settings.yaml 里唯一，按 2 空格缩进行锚定。"""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    def _fmt(k, v):
+        if k == "schedule":
+            return f'"{v}"'
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, list):
+            return "[" + ", ".join(str(x) for x in v) + "]"
+        return str(v)
+
+    for k, v in fields.items():
+        val = _fmt(k, v)
+        pat = re.compile(rf"(?m)^(\s{{2}}{re.escape(k)}:\s*)[^#\n]*?(\s*)(#.*)?$")
+        text, n = pat.subn(lambda m: m.group(1) + val + (("   " + m.group(3)) if m.group(3) else ""),
+                           text, count=1)
+        if n != 1:
+            raise KeyError(f"settings.yaml 的 auto 段找不到字段 {k}")
+
+    def _check(d):
+        a = d.get("auto", {})
+        return all(a.get(k) == v if not isinstance(v, list) else (a.get(k) or []) == v
+                   for k, v in fields.items())
+
+    if _write_validated(path, text, _check):
+        return
+    data = _load(path)
+    data.setdefault("auto", {}).update(fields)
+    _dump_fallback(path, data)
+
+
 def set_research_thresholds(min_results: int, min_chars: int, path: str = "settings.yaml"):
     """写回搜索兜底链阈值（只改 research 段那两行的数字，注释与其它内容原样保留）。"""
     with open(path, "r", encoding="utf-8") as f:

@@ -41,8 +41,8 @@ hotspot:
 # ⚠️ 运行时需浏览器 + Wechatsync 扩展开着（CLI 借扩展登录态发草稿）
 auto:
   enabled: true
-  schedule: "07:00"       # 每天几点跑（HH:MM；改时间需重启服务，enabled 开关即改即生效）
-  count: 3                # 每次最多选几条热点出稿
+  schedule: "07:00"   # 每天几点跑（HH:MM；界面/接口改动即生效，无需重启）
+  count: 3   # 每次最多选几条热点出稿
   min_level: green        # 质量闸：green=只绿档进草稿；green+yellow=绿黄都进（红档一律拦）
   tracks: []              # 空=用当前开启的全部赛道；也可指定，如 [keji, minsheng]
   platforms: [toutiao]    # 草稿发到哪些平台

@@ -18,6 +18,7 @@ import html as html_escape_mod
 import re
 import subprocess
 import tempfile
+import threading
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
@@ -27,7 +28,7 @@ from pydantic import BaseModel
 
 from config import (load_env, load_settings, enabled_tracks, get_account,
                     load_tracks, set_hotspot_sources, set_track_enabled, set_research_thresholds,
-                    ordered_track_keys, set_track_order)
+                    ordered_track_keys, set_track_order, set_auto_config)
 from hotspot import fetch_all, classify
 from generate import write, pick_cover
 from generate.illustrate import scrape_cover_pool, download_valid_image, save_image_bytes
@@ -476,6 +477,45 @@ def run_auto_pipeline(trigger: str = "manual", overrides: dict | None = None) ->
     return record
 
 
+# ---- 异步执行与互斥：手动/定时共用一把锁，同一时间只跑一轮 ----
+_auto_run_lock = threading.Lock()
+_auto_state = {"running": False, "started": None, "trigger": None}
+
+
+def _scheduled_tick():
+    """定时触发入口（在调度器线程里跑；上一轮没完就跳过本次）。"""
+    if not _auto_run_lock.acquire(blocking=False):
+        print("  ⏰ 定时触发时上一轮流水线仍在运行，跳过本次")
+        return
+    _auto_state.update(running=True, started=time.strftime("%Y-%m-%d %H:%M:%S"), trigger="schedule")
+    try:
+        run_auto_pipeline("schedule")
+    finally:
+        _auto_state["running"] = False
+        _auto_run_lock.release()
+
+
+def _last_auto_run() -> dict | None:
+    try:
+        if os.path.exists(AUTO_RUNS_LOG):
+            lines = [l for l in open(AUTO_RUNS_LOG, encoding="utf-8").read().splitlines() if l.strip()]
+            if lines:
+                lr = json.loads(lines[-1])
+                return {k: lr.get(k) for k in ("time", "trigger", "ok", "summary", "skipped", "error")}
+    except Exception:
+        pass
+    return None
+
+
+def _next_run_str() -> str | None:
+    try:
+        sch = getattr(app.state, "auto_scheduler", None)
+        job = sch.get_job("auto_pipeline") if sch else None
+        return job.next_run_time.strftime("%Y-%m-%d %H:%M") if job and job.next_run_time else None
+    except Exception:
+        return None
+
+
 class AutoRunRequest(BaseModel):
     count: int | None = None
     min_level: str | None = None
@@ -485,9 +525,32 @@ class AutoRunRequest(BaseModel):
 
 @app.post("/auto/run")
 def auto_run(req: AutoRunRequest | None = None):
-    """手动触发一轮自动流水线（忽略 enabled 总开关；可传覆盖参数用于测试）。"""
+    """手动触发一轮自动流水线：【异步】立即返回，后台线程执行（进度看 /auto/status、结果看 /auto/runs）。
+    已有一轮在跑（手动或定时）则拒绝，避免并发重复出稿。"""
     overrides = {k: v for k, v in (req.model_dump() if req else {}).items() if v is not None}
-    return run_auto_pipeline("manual", overrides)
+    if not _auto_run_lock.acquire(blocking=False):
+        return {"ok": False, "started": False,
+                "error": f"自动流水线正在运行中（{_auto_state.get('started') or '刚刚'} 启动），请等本轮结束"}
+    _auto_state.update(running=True, started=time.strftime("%Y-%m-%d %H:%M:%S"), trigger="manual")
+
+    def _bg():
+        try:
+            run_auto_pipeline("manual", overrides)
+        finally:
+            _auto_state["running"] = False
+            _auto_run_lock.release()
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"ok": True, "started": True, "message": "自动流水线已启动（后台运行，约几分钟），完成后见运行记录"}
+
+
+@app.get("/auto/status")
+def auto_status():
+    """自动流水线状态：是否在跑、定时开关/时间、下次运行、最近一次结果（选题页状态条用）。"""
+    auto = load_settings().get("auto", {})
+    return {"running": _auto_state["running"], "running_since": _auto_state.get("started"),
+            "enabled": bool(auto.get("enabled")), "schedule": auto.get("schedule", ""),
+            "next_run": _next_run_str(), "last_run": _last_auto_run()}
 
 
 @app.get("/auto/runs")
@@ -502,24 +565,32 @@ def auto_runs(limit: int = 10):
         return {"runs": [], "error": str(e)}
 
 
+def _reschedule_auto(sched_str: str):
+    """按 HH:MM 注册/重排每日定时 job（reschedule_job，改时间无需重启服务）。"""
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    hh, mm = sched_str.split(":")
+    trigger = CronTrigger(hour=int(hh), minute=int(mm))
+    scheduler = getattr(app.state, "auto_scheduler", None)
+    if scheduler is None:
+        scheduler = BackgroundScheduler()
+        scheduler.start()
+        app.state.auto_scheduler = scheduler
+    if scheduler.get_job("auto_pipeline"):
+        scheduler.reschedule_job("auto_pipeline", trigger=trigger)
+    else:
+        scheduler.add_job(_scheduled_tick, trigger, id="auto_pipeline", misfire_grace_time=3600)
+    print(f"  ⏰ 自动流水线定时：每天 {sched_str}（enabled 运行时现读；需浏览器+Wechatsync扩展开着）")
+
+
 @app.on_event("startup")
 def _start_auto_scheduler():
-    """服务启动时注册每日定时 job。enabled 在每轮运行时现读（开关即改即生效）；改 schedule 需重启。"""
-    auto = load_settings().get("auto", {})
-    sched = str(auto.get("schedule", "")).strip()
+    """服务启动时注册每日定时 job。enabled 在每轮运行时现读（开关即改即生效）。"""
+    sched = str(load_settings().get("auto", {}).get("schedule", "")).strip()
     if not sched:
         return
     try:
-        hh, mm = sched.split(":")
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from apscheduler.triggers.cron import CronTrigger
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(lambda: run_auto_pipeline("schedule"),
-                          CronTrigger(hour=int(hh), minute=int(mm)),
-                          id="auto_pipeline", misfire_grace_time=3600)
-        scheduler.start()
-        app.state.auto_scheduler = scheduler
-        print(f"  ⏰ 自动流水线定时已注册：每天 {sched}（enabled={auto.get('enabled')}，运行时现读；需浏览器+Wechatsync扩展开着）")
+        _reschedule_auto(sched)
     except Exception as e:
         print(f"  ⚠️ 自动流水线定时注册失败（不影响其它功能）：{e}")
 
@@ -558,15 +629,7 @@ def get_app_settings():
               for k in ordered_track_keys(all_tracks)]   # 按持久化顺序返回（芯片/设置页共用）
 
     auto = s.get("auto", {})
-    last_run = None
-    try:
-        if os.path.exists(AUTO_RUNS_LOG):
-            lines = [l for l in open(AUTO_RUNS_LOG, encoding="utf-8").read().splitlines() if l.strip()]
-            if lines:
-                lr = json.loads(lines[-1])
-                last_run = {k: lr.get(k) for k in ("time", "trigger", "ok", "summary", "skipped", "error")}
-    except Exception:
-        pass
+    last_run = _last_auto_run()
     return {
         "auto": {
             "enabled": bool(auto.get("enabled")),
@@ -609,6 +672,52 @@ def post_settings_sources(req: SourcesRequest):
         raise HTTPException(status_code=400, detail="至少保留一个热点来源")
     set_hotspot_sources(sources)
     return {"ok": True, "sources": sources}
+
+
+class AutoConfigRequest(BaseModel):
+    enabled: bool | None = None
+    schedule: str | None = None
+    count: int | None = None
+    min_level: str | None = None
+    platforms: list[str] | None = None
+    tracks: list[str] | None = None
+
+
+@app.post("/settings/auto")
+def post_settings_auto(req: AutoConfigRequest):
+    """写回 auto 段配置（只改传入的字段，yaml 定点回写保注释）。改 schedule 会当场重排定时，无需重启。"""
+    fields: dict = {}
+    if req.enabled is not None:
+        fields["enabled"] = req.enabled
+    if req.schedule is not None:
+        m = re.fullmatch(r"(\d{1,2}):(\d{2})", req.schedule.strip())
+        if not m or not (0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59):
+            raise HTTPException(status_code=400, detail="schedule 需为 HH:MM（如 07:00）")
+        fields["schedule"] = f"{int(m.group(1)):02d}:{m.group(2)}"
+    if req.count is not None:
+        fields["count"] = max(1, min(10, req.count))
+    if req.min_level is not None:
+        if req.min_level not in ("green", "green+yellow"):
+            raise HTTPException(status_code=400, detail="min_level 只接受 green 或 green+yellow")
+        fields["min_level"] = req.min_level
+    if req.platforms is not None:
+        valid = {"toutiao", "baijiahao", "zhihu"}
+        ps = [p for p in req.platforms if p in valid]
+        if not ps:
+            raise HTTPException(status_code=400, detail="至少保留一个目标平台")
+        fields["platforms"] = ps
+    if req.tracks is not None:
+        fields["tracks"] = [k for k in req.tracks if k in load_tracks()]   # 空=用全部开启赛道
+    if not fields:
+        raise HTTPException(status_code=400, detail="没有要修改的字段")
+
+    set_auto_config(fields)
+    if "schedule" in fields:
+        try:
+            _reschedule_auto(fields["schedule"])
+        except Exception as e:
+            print(f"  ⚠️ 定时重排失败（配置已保存，重启后生效）：{e}")
+    return {"ok": True, **fields, "next_run": _next_run_str()}
 
 
 class TrackOrderRequest(BaseModel):
