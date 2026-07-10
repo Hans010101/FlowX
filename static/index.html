@@ -203,6 +203,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,
 .placeholder-note{color:var(--ink-faint);font-size:12.5px;font-style:italic}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#F4ECDD;padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:0 10px 30px rgba(42,35,30,.3);z-index:99;opacity:0;pointer-events:none;transition:.25s}
 .toast.show{opacity:1}
+.ipt{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:6px 10px;font:inherit;font-size:13px;color:var(--ink)}
+.ipt:hover{border-color:var(--brand)}
 
 /* 收窄时把左栏压成图标条，避免塌成竖排 */
 @media (max-width:880px){
@@ -248,6 +250,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,
           <div><p class="eyebrow">Step 01 · Discover</p><h1>选题</h1><p>选好来源和赛道，抓取今天的热点，勾选要写的题</p></div>
           <button class="btn primary" id="fetchBtn" onclick="fetchHotspots()">抓取今日热点 →</button>
         </div>
+
+        <div class="runsum" id="autoBar" style="display:none"></div>
 
         <div class="panel">
           <div class="phead"><div class="t"><span class="barmark"></span>热点来源 <span class="muted">（真开关：点谁抓谁，改动即保存）</span></div><span class="muted" id="srcHint">聚合服务状态见「设置」</span></div>
@@ -310,6 +314,7 @@ function show(v){
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id===v));
   document.querySelectorAll('.navitem').forEach(s=>s.classList.toggle('on',s.dataset.v===v));
   window.scrollTo({top:0});
+  if(v==='pick') loadAutoStatus();     // 进选题即刷新自动流水线状态条
   if(v==='store') loadArticles();      // 进稿库即拉真库
   if(v==='settings') loadSettingsData(); // 进设置即刷新配置与服务状态
 }
@@ -501,24 +506,102 @@ async function toggleTrack(key, el){
   }
 }
 
-// 自动流水线区块（只读展示；改配置编辑 settings.yaml 的 auto 段）
+// ================= 自动流水线：状态条（选题页）+ 可编辑配置（设置页）=================
+let AUTOST=null, _autoPollT=null;
+
+function _lastRunText(lr){
+  return !lr?'还没跑过'
+    :`${lr.time||''}（${lr.trigger==='schedule'?'定时':'手动'}）· ${lr.summary||lr.skipped||lr.error||(lr.ok?'完成':'失败')}`;
+}
+
+async function loadAutoStatus(){
+  let prevRunning=AUTOST?AUTOST.running:false;
+  try{
+    const res=await fetch('/auto/status');
+    if(!res.ok) return;
+    AUTOST=await res.json();
+  }catch(e){ return; }
+  renderAutoBar();
+  if(prevRunning && !AUTOST.running){
+    toast('自动流水线本轮完成：'+(AUTOST.last_run?.summary||AUTOST.last_run?.skipped||AUTOST.last_run?.error||'见运行记录'));
+    if(SET.auto) SET.auto.last_run=AUTOST.last_run;
+    renderSettingsView();
+  }
+  clearTimeout(_autoPollT); _autoPollT=null;
+  if(AUTOST.running) _autoPollT=setTimeout(loadAutoStatus,5000);   // 运行中每5秒轮询
+}
+
+function renderAutoBar(){
+  const bar=document.getElementById('autoBar');
+  if(!bar||!AUTOST) return;
+  const A=AUTOST;
+  const lrTxt=_lastRunText(A.last_run);
+  bar.style.display='flex';
+  bar.innerHTML=`
+    <span class="k">⏱ 自动流水线</span>
+    <span class="pipdot"><span class="dot${A.enabled?'':' warn'}"></span>${A.enabled?`每天 ${escapeHtml(A.schedule||'—')}`:'定时已关'}</span>
+    ${A.enabled&&A.next_run?`<span class="muted">下次 ${escapeHtml(A.next_run)}</span>`:''}
+    <span class="muted" style="flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(lrTxt)}">上次 ${escapeHtml(lrTxt)}</span>
+    <span class="mini-sw${A.enabled?' on':''}" tabindex="0" role="switch" aria-checked="${A.enabled}" title="定时总开关（即改即生效）" onclick="saveAutoField({enabled:${!A.enabled}})"></span>
+    <button class="btn tool sm" onclick="runAutoNow(this)"${A.running?' disabled':''}>${A.running?`⏳ 运行中…（${escapeHtml((A.running_since||'').slice(11,16))} 启动）`:'▶ 立即运行一次'}</button>`;
+}
+
+async function runAutoNow(btn){
+  btn.disabled=true; btn.textContent='⏳ 启动中…';
+  try{
+    const res=await fetch('/auto/run',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await res.json();
+    if(!d.ok||!d.started) throw new Error(d.error||'启动失败');
+    toast('已启动，后台运行中（约几分钟），完成会提示');
+  }catch(e){
+    toast('启动失败：'+e.message);
+  }
+  loadAutoStatus();
+}
+
+// 写回 auto 配置（只传要改的字段）；成功后同步状态条与设置区块
+async function saveAutoField(fields){
+  try{
+    const res=await fetch('/settings/auto',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(fields)});
+    const d=await res.json();
+    if(!res.ok||!d.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    Object.assign(SET.auto||{}, fields);
+    toast('自动流水线配置已保存'+(fields.schedule&&d.next_run?` · 下次 ${d.next_run}`:'（即时生效）'));
+  }catch(e){
+    toast('保存失败：'+e.message);
+  }
+  renderSettingsView(); loadAutoStatus();
+}
+function saveAutoPlatforms(el){
+  const ps=[...el.closest('span').querySelectorAll('input:checked')].map(i=>i.value);
+  if(!ps.length){ el.checked=true; toast('至少保留一个目标平台'); return; }
+  saveAutoField({platforms:ps});
+}
+function saveAutoTracks(el){
+  saveAutoField({tracks:[...el.closest('span').querySelectorAll('input:checked')].map(i=>i.value)});
+}
+
+// 设置页「⏱ 自动流水线」区块（可编辑，改动即保存生效）
 function autoSecHtml(){
   const A=SET.auto;
   if(!A) return '';
-  const PN={toutiao:'头条',baijiahao:'百家号',zhihu:'知乎'};
-  const lr=A.last_run;
-  const lrTxt=!lr?'还没跑过'
-    :`${lr.time}（${lr.trigger==='schedule'?'定时':'手动'}）· ${lr.summary||lr.skipped||lr.error||(lr.ok?'完成':'失败')}`;
+  const PN=[['toutiao','头条'],['baijiahao','百家号'],['zhihu','知乎']];
   return `
     <div class="set-sec">
       <h2>⏱ 自动流水线 <span class="muted" style="font-weight:400;font-size:12.5px">定时 选题→生成→质检→按档进草稿箱</span></h2>
-      <p class="sub">改配置编辑 settings.yaml 的 auto 段（enabled 即改即生效；改时间需重启服务）。⚠️ 运行时需浏览器 + Wechatsync 扩展开着，CLI 借扩展登录态发草稿。</p>
-      <div class="keyrow"><span class="kn">状态</span><span class="keyok${A.enabled?'':' miss'}"><span class="dot${A.enabled?'':' warn'}"></span>${A.enabled?'已启用':'已关闭'}</span><span class="muted" style="margin-left:12px">每天 ${escapeHtml(A.schedule||'—')} · 每次最多 ${A.count} 篇</span></div>
-      <div class="keyrow"><span class="kn">质量闸</span><span>${A.min_level==='green'?'🟢 只有绿档进草稿箱':'🟢🟡 绿黄档都进草稿箱'}<span class="muted">（红档一律拦下）</span></span></div>
-      <div class="keyrow"><span class="kn">目标平台</span><span>${(A.platforms||[]).map(p=>PN[p]||escapeHtml(p)).join('、')||'—'}</span></div>
-      <div class="keyrow"><span class="kn">限定赛道</span><span>${(A.tracks||[]).length?A.tracks.map(escapeHtml).join('、'):'不限（用当前开启的全部赛道）'}</span></div>
-      <div class="keyrow"><span class="kn">真发布</span><span class="${A.auto_publish?'keyok miss':''}">${A.auto_publish?'⚠ 开关已开（真发布功能未实现，仅提示，不会真发）':'关 · 只进草稿箱，发布仍由人把关'}</span></div>
-      <div class="keyrow"><span class="kn">最近一次</span><span class="muted">${escapeHtml(lrTxt)}</span></div>
+      <p class="sub">改动即保存、即时生效（改运行时间也无需重启）。⚠️ 运行时需浏览器 + Wechatsync 扩展开着，CLI 借扩展登录态发草稿。</p>
+      <div class="keyrow"><span class="kn">总开关</span><span class="mini-sw${A.enabled?' on':''}" tabindex="0" role="switch" aria-checked="${A.enabled}" onclick="saveAutoField({enabled:${!A.enabled}})"></span><span class="muted">${A.enabled?'到点自动跑一轮':'不自动跑（选题页仍可「立即运行一次」）'}</span></div>
+      <div class="keyrow"><span class="kn">运行时间</span><input type="time" class="ipt" value="${escapeHtml(A.schedule||'07:00')}" onchange="saveAutoField({schedule:this.value})"><span class="muted">每天一次</span></div>
+      <div class="keyrow"><span class="kn">每次篇数</span><input type="number" class="ipt" style="width:72px" min="1" max="10" value="${A.count}" onchange="saveAutoField({count:parseInt(this.value,10)||3})"><span class="muted">1~10 篇</span></div>
+      <div class="keyrow"><span class="kn">质量闸</span><select class="ipt" onchange="saveAutoField({min_level:this.value})">
+          <option value="green"${A.min_level==='green'?' selected':''}>🟢 只有绿档进草稿箱</option>
+          <option value="green+yellow"${A.min_level!=='green'?' selected':''}>🟢🟡 绿黄档都进草稿箱</option>
+        </select><span class="muted">红档一律拦下</span></div>
+      <div class="keyrow"><span class="kn">目标平台</span><span style="display:flex;gap:14px;flex-wrap:wrap">${PN.map(([c,n])=>`<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" value="${c}"${(A.platforms||[]).includes(c)?' checked':''} onchange="saveAutoPlatforms(this)">${n}</label>`).join('')}</span></div>
+      <div class="keyrow"><span class="kn">赛道范围</span><span style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">${SET.tracks.map(t=>`<label style="display:flex;gap:4px;align-items:center;cursor:pointer;font-size:12.5px"><input type="checkbox" value="${escapeHtml(t.key)}"${(A.tracks||[]).includes(t.key)?' checked':''} onchange="saveAutoTracks(this)">${escapeHtml(t.name)}</label>`).join('')}<span class="muted">全不勾 = 用当前开启的全部赛道</span></span></div>
+      <div class="keyrow"><span class="kn">真发布</span><span>${A.auto_publish?'⚠ 开关已开（真发布未实现，仅提示，不会真发）':'关 · 只进草稿箱，发布仍由人把关'}<span class="muted">（如需改在 settings.yaml）</span></span></div>
+      <div class="keyrow"><span class="kn">最近一次</span><span class="muted">${escapeHtml(_lastRunText(A.last_run))}</span></div>
     </div>`;
 }
 
@@ -987,6 +1070,7 @@ document.addEventListener('keydown',e=>{
 
 updateSelectedBar();
 loadSettingsData();   // 启动即拉配置：渲染来源芯片 + 侧栏源状态
+loadAutoStatus();     // 启动即拉自动流水线状态条（运行中会自动轮询）
 </script>
 </body>
 </html>
