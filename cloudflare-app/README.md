@@ -19,6 +19,6 @@ Wechatsync 与平台同步发布不在云端版中，因为它需要用户电脑
 
 - 整个 Worker（包括静态入口）默认通过 Google OAuth 登录；登录会话使用安全 Cookie 在同一浏览器中保留 30 天。
 - `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`SESSION_SECRET`、`ALLOWED_EMAILS` 与 `CONFIG_KEY` 只能通过 `wrangler secret put` 设置。
-- `FLOWX_PASSWORD` 仅作为维护者应急登录通道保留，不在产品界面中展示。
-- DeepSeek/Tavily Key 通过工作台写入时，在 Worker 内使用 AES-GCM 加密后进入 D1。
+- 旧版 HTTP Basic 应急入口已停用，避免浏览器缓存凭证后无法退出或切换 Google 账号。
+- DeepSeek/Tavily Key 通过工作台写入时，在 Worker 内使用 AES-GCM 加密，并按 Google 邮箱隔离后进入 D1；稿库数据也按邮箱隔离。
 - 不得把任何生产 Secret 写进 `wrangler.jsonc`、Git 或日志。

@@ -41,7 +41,7 @@ npx wrangler deploy --config cloudflare-app/wrangler.jsonc
 - 已获授权的 JavaScript 来源：`https://flowx-app.hans-pan007.workers.dev`
 - 已获授权的重定向 URI：`https://flowx-app.hans-pan007.workers.dev/auth/callback`
 
-`ALLOWED_EMAILS` 使用英文逗号分隔允许登录的 Google 邮箱。`SESSION_SECRET` 应使用至少 32 字节的随机值。当前实例：<https://flowx-app.hans-pan007.workers.dev>。登录态由 `HttpOnly`、`Secure`、`SameSite=Lax` Cookie 保存 30 天；API Key 在 Worker 内以 AES-GCM 加密后写入 D1，仓库和前端只保存“是否已配置”。
+`ALLOWED_EMAILS` 使用英文逗号分隔允许登录的 Google 邮箱。`SESSION_SECRET` 应使用至少 32 字节的随机值。当前实例：<https://flowx-app.hans-pan007.workers.dev>。登录态由 `HttpOnly`、`Secure`、`SameSite=Lax` Cookie 保存 30 天；API Key 在 Worker 内以 AES-GCM 加密，并以 Google 邮箱作为数据分区写入 D1。稿库同样按邮箱隔离，仓库和前端只保存“是否已配置”。
 
 ## 为什么不把 FastAPI 原样放进 Workers
 

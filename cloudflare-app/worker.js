@@ -20,11 +20,6 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
 });
 
-function isBasicAuthorized(request, env) {
-  const expected = `Basic ${btoa(`flowx:${env.FLOWX_PASSWORD || ""}`)}`;
-  return Boolean(env.FLOWX_PASSWORD) && request.headers.get("Authorization") === expected;
-}
-
 function htmlEscape(value) {
   return String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -148,15 +143,19 @@ async function decrypt(value, env) {
   return new TextDecoder().decode(clear);
 }
 
-async function getConfig(env, key) {
-  const row = await env.DB.prepare("SELECT value FROM config WHERE key=?").bind(key).first();
+function accountEmail(user) {
+  return String(user?.email || "").trim().toLowerCase();
+}
+
+async function getConfig(env, email, key) {
+  const row = await env.DB.prepare("SELECT value FROM user_config WHERE owner_email=? AND key=?").bind(email, key).first();
   return row ? decrypt(row.value, env) : "";
 }
 
-async function setConfig(env, key, value) {
+async function setConfig(env, email, key, value) {
   const encrypted = await encrypt(value, env);
-  await env.DB.prepare("INSERT INTO config(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
-    .bind(key, encrypted).run();
+  await env.DB.prepare("INSERT INTO user_config(owner_email,key,value,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(owner_email,key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+    .bind(email, key, encrypted).run();
 }
 
 function classify(title) {
@@ -250,20 +249,20 @@ async function articleId(title) {
   return [...new Uint8Array(digest)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function saveArticle(env, article, qc, oldId = null) {
+async function saveArticle(env, email, article, qc, oldId = null) {
   const id = await articleId(article.title);
   const status = qc.level === "red" ? "待修复" : "未发";
-  if (oldId && oldId !== id) await env.DB.prepare("DELETE FROM articles WHERE id=?").bind(oldId).run();
-  await env.DB.prepare(`INSERT INTO articles(id,title,body,track,source,status,qc_score,qc_level,qc_problems,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-    ON CONFLICT(id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`)
-    .bind(id, article.title, article.body, article.track || "", article.source || "", status, qc.score, qc.level, JSON.stringify(qc.problems)).run();
+  if (oldId && oldId !== id) await env.DB.prepare("DELETE FROM user_articles WHERE owner_email=? AND id=?").bind(email, oldId).run();
+  await env.DB.prepare(`INSERT INTO user_articles(owner_email,id,title,body,track,source,status,qc_score,qc_level,qc_problems,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+    ON CONFLICT(owner_email,id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`)
+    .bind(email, id, article.title, article.body, article.track || "", article.source || "", status, qc.score, qc.level, JSON.stringify(qc.problems)).run();
   return { id, ...article, status, qc_score: qc.score, qc_level: qc.level, qc_problems: qc.problems };
 }
 
-async function generateOne(item, env) {
-  const deepseekKey = await getConfig(env, "DEEPSEEK_API_KEY");
-  const tavilyKey = await getConfig(env, "TAVILY_API_KEY");
+async function generateOne(item, env, email) {
+  const deepseekKey = await getConfig(env, email, "DEEPSEEK_API_KEY");
+  const tavilyKey = await getConfig(env, email, "TAVILY_API_KEY");
   if (!deepseekKey || !tavilyKey) throw new Error("请先在设置中配置 DeepSeek 与 Tavily API Key");
   const search = await tavilySearch(item.title, tavilyKey);
   const material = search.map((r, i) => `【资料${i + 1}】${r.title || ""}\n${r.content || ""}`).join("\n\n");
@@ -275,24 +274,25 @@ async function generateOne(item, env) {
   const article = { title: String(draft.title || item.title).trim().slice(0, 60), body: String(draft.body || "").trim(), track, source: item.source || "" };
   if (article.body.length < 50) throw new Error("模型返回正文过短");
   const qc = await qualityCheck(article, deepseekKey);
-  return saveArticle(env, article, qc);
+  return saveArticle(env, email, article, qc);
 }
 
 async function handleApi(request, env, user) {
   const url = new URL(request.url);
   const path = url.pathname;
+  const email = accountEmail(user);
   if (path === "/api/health") return json({ ok: true, service: "FlowX Cloud", region: request.cf?.colo || "unknown" });
   if (path === "/api/me") return json({ user, session_days: 30, auth: user?.emergency ? "basic" : "google" });
 
   if (path === "/api/settings" && request.method === "GET") {
-    const rows = await env.DB.prepare("SELECT key FROM config").all();
+    const rows = await env.DB.prepare("SELECT key FROM user_config WHERE owner_email=?").bind(email).all();
     const keys = new Set((rows.results || []).map(r => r.key));
     return json({ keys: { deepseek: keys.has("DEEPSEEK_API_KEY"), tavily: keys.has("TAVILY_API_KEY") } });
   }
   if (path === "/api/settings/keys" && request.method === "POST") {
     const body = await request.json();
-    if (String(body.deepseek || "").trim()) await setConfig(env, "DEEPSEEK_API_KEY", String(body.deepseek).trim());
-    if (String(body.tavily || "").trim()) await setConfig(env, "TAVILY_API_KEY", String(body.tavily).trim());
+    if (String(body.deepseek || "").trim()) await setConfig(env, email, "DEEPSEEK_API_KEY", String(body.deepseek).trim());
+    if (String(body.tavily || "").trim()) await setConfig(env, email, "TAVILY_API_KEY", String(body.tavily).trim());
     return json({ ok: true });
   }
   if (path === "/api/hotspots" && request.method === "POST") return json(await fetchHotspots());
@@ -302,42 +302,42 @@ async function handleApi(request, env, user) {
     if (!items.length) return json({ error: "至少选择一个选题" }, 400);
     const results = [];
     for (const item of items) {
-      try { results.push({ ok: true, ...(await generateOne(item, env)) }); }
+      try { results.push({ ok: true, ...(await generateOne(item, env, email)) }); }
       catch (error) { results.push({ ok: false, title: item.title, error: error.message }); }
     }
     return json({ results });
   }
   if (path === "/api/articles" && request.method === "GET") {
-    const rows = await env.DB.prepare("SELECT * FROM articles ORDER BY created_at DESC LIMIT 500").all();
+    const rows = await env.DB.prepare("SELECT * FROM user_articles WHERE owner_email=? ORDER BY created_at DESC LIMIT 500").bind(email).all();
     return json({ articles: rows.results || [] });
   }
   const articleMatch = path.match(/^\/api\/articles\/([a-f0-9]+)$/);
   if (articleMatch && request.method === "PUT") {
-    const old = await env.DB.prepare("SELECT * FROM articles WHERE id=?").bind(articleMatch[1]).first();
+    const old = await env.DB.prepare("SELECT * FROM user_articles WHERE owner_email=? AND id=?").bind(email, articleMatch[1]).first();
     if (!old) return json({ error: "稿件不存在" }, 404);
     const body = await request.json();
     const article = { title: String(body.title || "").trim(), body: String(body.body || "").trim(), track: old.track, source: old.source };
     if (article.title.length < 4 || article.body.length < 50) return json({ error: "标题至少4字，正文至少50字" }, 400);
-    const key = await getConfig(env, "DEEPSEEK_API_KEY");
+    const key = await getConfig(env, email, "DEEPSEEK_API_KEY");
     const qc = await qualityCheck(article, key);
-    return json({ ok: true, ...(await saveArticle(env, article, qc, articleMatch[1])) });
+    return json({ ok: true, ...(await saveArticle(env, email, article, qc, articleMatch[1])) });
   }
   if (articleMatch && request.method === "DELETE") {
-    await env.DB.prepare("DELETE FROM articles WHERE id=?").bind(articleMatch[1]).run();
+    await env.DB.prepare("DELETE FROM user_articles WHERE owner_email=? AND id=?").bind(email, articleMatch[1]).run();
     return json({ ok: true });
   }
   const statusMatch = path.match(/^\/api\/articles\/([a-f0-9]+)\/status$/);
   if (statusMatch && request.method === "POST") {
     const body = await request.json();
     if (!["未发", "已发", "待修复"].includes(body.status)) return json({ error: "状态无效" }, 400);
-    await env.DB.prepare("UPDATE articles SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(body.status, statusMatch[1]).run();
+    await env.DB.prepare("UPDATE user_articles SET status=?,updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?").bind(body.status, email, statusMatch[1]).run();
     return json({ ok: true });
   }
   if (path === "/api/revise" && request.method === "POST") {
     const body = await request.json();
-    const old = await env.DB.prepare("SELECT * FROM articles WHERE id=?").bind(body.id).first();
+    const old = await env.DB.prepare("SELECT * FROM user_articles WHERE owner_email=? AND id=?").bind(email, body.id).first();
     if (!old) return json({ error: "稿件不存在" }, 404);
-    const key = await getConfig(env, "DEEPSEEK_API_KEY");
+    const key = await getConfig(env, email, "DEEPSEEK_API_KEY");
     const problems = JSON.parse(old.qc_problems || "[]");
     const revised = await deepseek([
       { role: "system", content: "你是中文内容编辑。只返回JSON。根据问题修订稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。" },
@@ -345,7 +345,7 @@ async function handleApi(request, env, user) {
     ], key, 0.4);
     const article = { title: String(revised.title || old.title).trim(), body: String(revised.body || old.body).trim(), track: old.track, source: old.source };
     const qc = await qualityCheck(article, key);
-    return json({ ok: true, ...(await saveArticle(env, article, qc, old.id)) });
+    return json({ ok: true, ...(await saveArticle(env, email, article, qc, old.id)) });
   }
   return json({ error: "Not found" }, 404);
 }
@@ -355,8 +355,7 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname.startsWith("/auth/")) return await handleAuth(request, env);
-      let user = await readSession(request, env);
-      if (!user && isBasicAuthorized(request, env)) user = { email: "emergency@flowx.local", name: "Emergency Admin", picture: "", emergency: true };
+      const user = await readSession(request, env);
       if (!user) return url.pathname.startsWith("/api/") ? json({ error: "请先使用 Google 账号登录", login: "/auth/login" }, 401) : loginPage(env);
       if (url.pathname.startsWith("/api/")) return await handleApi(request, env, user);
       return env.ASSETS.fetch(request);
