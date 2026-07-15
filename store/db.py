@@ -126,6 +126,34 @@ def delete_article(article_id: str):
         conn.close()
 
 
+def update_article(article_id: str, item: dict, status: str) -> str:
+    """更新稿件正文并返回新 id；标题变化时原子地移除旧 id 行。"""
+    new_id = _aid(item["title"])
+    conn = _conn()
+    try:
+        existing = conn.execute("SELECT created_at FROM articles WHERE id=?", (article_id,)).fetchone()
+        if not existing:
+            raise KeyError(article_id)
+        if new_id != article_id:
+            collision = conn.execute("SELECT 1 FROM articles WHERE id=?", (new_id,)).fetchone()
+            if collision:
+                raise ValueError("已有同标题稿件，请换一个标题")
+        conn.execute(
+            "INSERT OR REPLACE INTO articles "
+            "(id,title,body,image,track,source,status,created_at,qc_score,qc_level,qc_problems,"
+            "img_candidates,image_idx) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (new_id, item["title"], item.get("body", ""), item.get("image"),
+             item.get("track", ""), item.get("source", ""), status,
+             existing["created_at"], item.get("qc_score"), item.get("qc_level"),
+             item.get("qc_problems"), item.get("img_candidates"), item.get("image_idx")))
+        if new_id != article_id:
+            conn.execute("DELETE FROM articles WHERE id=?", (article_id,))
+        conn.commit()
+        return new_id
+    finally:
+        conn.close()
+
+
 def set_status(title: str, status: str):
     conn = _conn()
     try:

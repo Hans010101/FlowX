@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="FlowX：本地优先的 AI 内容生产、质检与多平台草稿交付工作流。">
+  <title>FlowX · 从热点到合格草稿</title>
+  <style>
+    :root{--paper:#f4ecdd;--card:#fdfaf3;--ink:#2a231e;--muted:#74695f;--line:#d9ccbb;--red:#ae352b;--deep:#74231e;--green:#3b7a57}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.7 ui-sans-serif,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+    a{color:inherit}.wrap{width:min(1100px,calc(100% - 40px));margin:auto}.nav{height:72px;display:flex;align-items:center;justify-content:space-between}.brand{font:800 25px/1 Georgia,serif;letter-spacing:.5px}.brand i{color:var(--red);font-style:normal}.nav a{font-weight:650;text-decoration:none;color:var(--muted)}
+    .hero{padding:80px 0 72px;display:grid;grid-template-columns:1.1fr .9fr;gap:70px;align-items:center}.eyebrow{color:var(--red);font-size:13px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.hero h1{font:800 clamp(42px,6vw,76px)/1.06 Georgia,"Songti SC",serif;margin:16px 0 22px;letter-spacing:-.03em}.hero p{font-size:19px;color:var(--muted);max-width:670px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:34px}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 20px;border-radius:8px;border:1px solid var(--red);font-weight:750;text-decoration:none}.btn.primary{background:var(--red);color:#fff}.btn:hover{transform:translateY(-1px)}
+    .flow{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:25px;box-shadow:0 22px 50px #6c4c2f18}.flow h2{font:750 18px/1.2 Georgia,serif;margin:0 0 16px}.step{display:grid;grid-template-columns:30px 1fr;gap:12px;padding:12px 0;border-top:1px solid #e7ddcf}.step:first-of-type{border-top:0}.n{width:27px;height:27px;border-radius:50%;background:#f0d9d4;color:var(--deep);display:grid;place-items:center;font:700 12px/1 monospace}.step b{display:block}.step span{color:var(--muted);font-size:13px}.gate{margin-top:12px;padding:10px 12px;border-radius:8px;background:#e9f2ec;color:var(--green);font-weight:700;font-size:13px}
+    .section{padding:76px 0}.section h2{font:750 clamp(30px,4vw,46px)/1.15 Georgia,"Songti SC",serif;margin:0 0 14px}.lead{color:var(--muted);max-width:720px;margin:0 0 34px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}.card strong{display:block;font-size:18px;margin-bottom:8px}.card p{margin:0;color:var(--muted);font-size:14px}.notice{display:grid;grid-template-columns:1fr auto;gap:30px;align-items:center;background:var(--ink);color:var(--card);padding:34px;border-radius:16px}.notice p{color:#d6cdc3;margin:7px 0 0}.notice .btn{border-color:#e9b0aa;color:#fff}.foot{padding:36px 0 50px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;border-top:1px solid var(--line)}
+    @media(max-width:800px){.hero{grid-template-columns:1fr;padding-top:45px;gap:35px}.grid{grid-template-columns:1fr}.notice{grid-template-columns:1fr}.nav a{display:none}.foot{display:block}.foot span{display:block;margin-top:8px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn:hover{transform:none}}
+  </style>
+</head>
+<body>
+  <header class="wrap nav"><div class="brand">Flow<i>X</i></div><a href="https://github.com/Hans010101/FlowX">GitHub 开源仓库 ↗</a></header>
+  <main>
+    <section class="wrap hero">
+      <div><div class="eyebrow">Local-first AI content workflow</div><h1>从热点，走到<br>可发布的好稿。</h1><p>FlowX 把选题、事实素材、AI 写作、配图、质量闸和多平台草稿交付串成一条可审计的内容工作流。最后一步仍由人把关。</p><div class="actions"><a class="btn primary" href="https://github.com/Hans010101/FlowX">查看源码</a><a class="btn" href="https://github.com/Hans010101/FlowX#快速开始">本地安装</a></div></div>
+      <div class="flow"><h2>一篇稿件的 FlowX 路径</h2><div class="step"><i class="n">01</i><div><b>聚合热点</b><span>多来源合并、赛道加权归类、窗口去重</span></div></div><div class="step"><i class="n">02</i><div><b>检索与生成</b><span>素材回退链、赛道化写作、原报道图优先</span></div></div><div class="step"><i class="n">03</i><div><b>质量闸</b><span>规则 + AI 五维质检，缺来源不允许编造式修复</span></div></div><div class="step"><i class="n">04</i><div><b>交付草稿</b><span>发布环境预检后同步到目标平台草稿箱</span></div></div><div class="gate">✓ 人工确认发布 · 保留最终控制权</div></div>
+    </section>
+    <section class="section"><div class="wrap"><h2>它不是一个孤立的写作框。</h2><p class="lead">真正耗时的是从选题到交付之间的断点。FlowX 关注整条链路，以及每一步能否解释、修正和追踪。</p><div class="grid"><div class="card"><strong>多源选题雷达</strong><p>百度、头条直抓，更多平台聚合；跨平台同话题合并，避免重复劳动。</p></div><div class="card"><strong>可信内容生产</strong><p>搜索素材先行，配合事实一致性检查和明确的防编造修订红线。</p></div><div class="card"><strong>发布前先自检</strong><p>先检查 CLI、扩展连接与平台登录态，再执行同步，失败更早也更可操作。</p></div></div></div></section>
+    <section class="section"><div class="wrap notice"><div><strong>为什么核心工作台仍在本机？</strong><p>平台发布依赖浏览器登录态。FlowX 让 Key、Cookie 与账号会话留在你的设备上；Cloudflare 承载这个公开站点，边缘网络会自动为亚洲访问者选择邻近节点。</p></div><a class="btn" href="https://github.com/Hans010101/FlowX/blob/main/docs/DEPLOYMENT.md">了解部署边界</a></div></section>
+  </main>
+  <footer class="wrap foot"><span>FlowX · Open source under MIT License</span><span>Built for thoughtful, human-reviewed publishing.</span></footer>
+</body>
+</html>

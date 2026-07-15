@@ -7,3 +7,7 @@ output/
 .env
 *.db
 .DS_Store
+.wrangler/
+node_modules/
+.pytest_cache/
+.coverage

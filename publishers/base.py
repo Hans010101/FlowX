@@ -13,29 +13,8 @@ from __future__ import annotations
 import time
 import pathlib
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-
 from playwright.sync_api import sync_playwright, Page, BrowserContext
-
-
-# ---------- 数据结构 ----------
-
-@dataclass
-class Article:
-    title: str
-    content: str                      # 正文（纯文本或 HTML）
-    cover_image: str | None = None    # 封面图本地路径，可选
-    tags: list[str] = field(default_factory=list)
-
-
-@dataclass
-class PublishResult:
-    ok: bool
-    platform: str = ""
-    account: str = ""
-    as_draft: bool = True             # 这次是存草稿还是真发布
-    url: str | None = None
-    error: str | None = None
+from .models import Article, PublishResult
 
 
 # ---------- 发布器基类 ----------

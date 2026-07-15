@@ -155,6 +155,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,
 .pipdot{display:inline-flex;align-items:center;gap:6px;color:var(--ink-soft)}
 .optErr{margin-top:10px;font-size:12.5px;color:var(--stop)}
 .syncPanel{margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:12px 14px;background:var(--surface-2)}
+.editPanel{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-2)}
+.editPanel input,.editPanel textarea{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);padding:9px 11px;font:14px/1.6 inherit;margin-top:5px}
+.editPanel textarea{min-height:260px;resize:vertical}
+.editPanel label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:10px}
 
 .tabs{display:flex;gap:5px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
 .tab{padding:10px 16px;border:none;background:none;color:var(--ink-soft);font-size:14px;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:7px}
@@ -817,11 +821,6 @@ function covHtml(image){
 function bodyHtml(body){
   return `<p class="ex body" title="点击展开/收起全文" onclick="this.classList.toggle('full')">${escapeHtml(body||'').replace(/\n+/g,'<br><br>')}</p>`;
 }
-// 视觉占位按钮（动作未接入，均无 onclick）
-function phBtns(names, solidFirst){
-  return names.map((n,i)=>`<button class="btn ${(solidFirst&&!i)?'primary':'ghost'} sm" title="该动作将在后续版本接入">${n}</button>`).join('');
-}
-
 // 统一稿件卡片（生产页 mode='gen' / 稿库页 mode='pub'；delta=优化前后分数变化）
 function cardHtml(a, mode, delta){
   const q=qcInfo(a), k=statusKey(a);
@@ -846,10 +845,9 @@ function cardHtml(a, mode, delta){
   const stBtn= mode!=='pub' ? ''
              : k==='no' ? `<button class="btn ghost sm" onclick="markStatus('${escapeHtml(a.id||'')}','已发',this)" title="平台后台发布完成后，把这篇归档进「已发」">✓ 标记已发</button>`
              : k==='yes' ? `<button class="btn ghost sm" onclick="markStatus('${escapeHtml(a.id||'')}','未发',this)" title="标错了可改回「未发」">↩ 改回未发</button>` : '';
-  const holders= mode==='gen' ? (q.red?['手动修改']:['编辑'])
-               : k==='fix' ? ['重新生成','手动修改']
-               : k==='no' ? ['编辑'] : [];
-  const act=`<div class="actions">${syncBtn}${optBtn}${reimgBtn}${stBtn}${phBtns(holders,false)}</div>`;
+  const editBtn=(mode==='gen'||k==='no'||k==='fix')
+    ?`<button class="btn ghost sm" onclick="openEditor('${escapeHtml(a.id||'')}',this)" title="人工修改标题与正文，保存后自动重新质检">✎ 编辑</button>`:'';
+  const act=`<div class="actions">${syncBtn}${optBtn}${reimgBtn}${stBtn}${editBtn}</div>`;
   const stopchip=q.red?`<span class="stopchip">⛔ 已拦截 · 待修复，不进待发</span>`:'';
   return `<article class="card${q.red?' red':''}" data-id="${escapeHtml(a.id||'')}" data-s="${k}">${covHtml(a.image)}<div class="in">
       <div class="row1"><span class="tkmini">${escapeHtml(a.track||'')}</span>${qcBadgeHtml(q)}${deltaHtml(delta)}${degBadgeHtml(q)}${right}</div>
@@ -858,6 +856,37 @@ function cardHtml(a, mode, delta){
       ${stopchip}
       ${qcProbsHtml(q)}${act}
     </div></article>`;
+}
+
+// 人工编辑：卡片内展开编辑器，保存后后端重新质检并返回最新稿件。
+function openEditor(id, btn){
+  const card=btn.closest('.card');
+  let panel=card.querySelector('.editPanel');
+  if(panel){panel.remove();return;}
+  const title=card.querySelector('h3')?.textContent||'';
+  const body=(card.querySelector('.body')?.innerText||'').trim();
+  panel=document.createElement('div'); panel.className='editPanel';
+  panel.innerHTML=`<label>标题<input maxlength="60" value="${escapeHtml(title)}"></label>
+    <label>正文<textarea>${escapeHtml(body)}</textarea></label>
+    <div style="display:flex;gap:8px"><button class="btn primary sm">保存并重检</button><button class="btn ghost sm">取消</button></div>
+    <div class="editResult" style="margin-top:8px;font-size:12px;color:var(--stop)"></div>`;
+  card.querySelector('.in').appendChild(panel);
+  const [save,cancel]=panel.querySelectorAll('button');
+  cancel.onclick=()=>panel.remove();
+  save.onclick=()=>saveArticleEdit(id,card,panel,save);
+}
+
+async function saveArticleEdit(id,card,panel,save){
+  const title=panel.querySelector('input').value.trim(), body=panel.querySelector('textarea').value.trim();
+  save.disabled=true; save.textContent='⏳ 保存并质检中…';
+  try{
+    const res=await fetch(`/articles/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body})});
+    const d=await res.json(); if(!res.ok||!d.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    const mode=card.closest('#artCards')?'pub':'gen';
+    const tmp=document.createElement('div'); tmp.innerHTML=cardHtml(d,mode); card.replaceWith(tmp.firstElementChild);
+    toast(`已保存并重检 · ${d.qc_level==='red'?'仍需修复':'已回到未发队列'}`);
+    if(mode==='pub') loadArticles();
+  }catch(e){panel.querySelector('.editResult').textContent='⚠ '+e.message; save.disabled=false; save.textContent='保存并重检';}
 }
 
 // 一键优化：POST /revise → 就地把这张卡换成修订版（后端保证失败时原稿不动）
@@ -956,8 +985,27 @@ function autoSyncArticle(id, btn){
     <div class="syncResult" style="margin-top:9px;font-size:12.5px"></div>`;
   card.querySelector('.in').appendChild(panel);
   const [okBtn,cancelBtn]=panel.querySelectorAll(':scope > div > button');
+  okBtn.disabled=true; okBtn.textContent='⏳ 正在检查发布环境…';
   cancelBtn.onclick=()=>panel.remove();
   okBtn.onclick=()=>runAutoSync(id,panel,okBtn);
+  preflightSync(panel,okBtn);
+}
+
+async function preflightSync(panel,okBtn){
+  const resBox=panel.querySelector('.syncResult');
+  const platforms=[...panel.querySelectorAll('input:checked')].map(i=>i.value);
+  try{
+    const res=await fetch('/sync/preflight',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platforms})});
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.detail||('请求失败：'+res.status));
+    if(!d.ok){
+      resBox.innerHTML=`<span style="color:var(--stop)">⚠ ${escapeHtml(d.error||'发布环境未就绪')}</span>`+
+        (d.results||[]).map(r=>`<div style="color:${r.ok?'var(--ok)':'var(--stop)'}">${r.ok?'✓':'✗'} ${escapeHtml(r.platform)}：${escapeHtml(r.message||'')}</div>`).join('');
+      okBtn.textContent='重新检查'; okBtn.disabled=false; okBtn.onclick=()=>{okBtn.disabled=true;okBtn.textContent='⏳ 正在检查…';preflightSync(panel,okBtn)}; return;
+    }
+    resBox.innerHTML='<span style="color:var(--ok)">✓ CLI、扩展连接与平台登录状态均已通过</span>';
+    okBtn.disabled=false; okBtn.textContent='确认发布'; okBtn.onclick=()=>runAutoSync(panel.closest('.card').dataset.id,panel,okBtn);
+  }catch(e){resBox.innerHTML=`<span style="color:var(--stop)">⚠ 预检失败：${escapeHtml(e.message)}</span>`;okBtn.disabled=false;okBtn.textContent='重新检查';}
 }
 
 async function runAutoSync(id, panel, okBtn){

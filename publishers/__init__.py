@@ -7,31 +7,34 @@ publishers 包入口 —— 发布器注册表（工厂）
 加平台 = 在 REGISTRY 里加一行。
 """
 
-from .base import BasePublisher, Article, PublishResult
-from .toutiao import ToutiaoPublisher
-from .baijiahao import BaijiahaoPublisher
+from .models import Article, PublishResult
 
 # platform 字符串 -> 发布器类
-REGISTRY: dict[str, type[BasePublisher]] = {
-    "toutiao": ToutiaoPublisher,
-    "baijiahao": BaijiahaoPublisher,
-    # 以后加平台就在这里加一行，例如：
-    # "dayuhao": DayuhaoPublisher,
-}
+REGISTRY = {}
 
 
-def get_publisher(account: dict) -> BasePublisher:
+def _registry():
+    """延迟加载已冻结的 Playwright 发布器，避免核心生成/质检被浏览器依赖绑死。"""
+    if not REGISTRY:
+        from .base import BasePublisher
+        from .toutiao import ToutiaoPublisher
+        from .baijiahao import BaijiahaoPublisher
+        REGISTRY.update({"toutiao": ToutiaoPublisher, "baijiahao": BaijiahaoPublisher})
+    return REGISTRY
+
+
+def get_publisher(account: dict):
     """按账号配置里的 platform 返回对应发布器实例。"""
     platform = account.get("platform")
-    if platform not in REGISTRY:
+    registry = _registry()
+    if platform not in registry:
         raise ValueError(
-            f"未知平台 '{platform}'，已支持：{list(REGISTRY.keys())}。"
+            f"未知平台 '{platform}'，已支持：{list(registry.keys())}。"
             "如需新增，请在 publishers/ 下实现并注册到 REGISTRY。"
         )
-    return REGISTRY[platform](account)
+    return registry[platform](account)
 
 
 __all__ = [
-    "BasePublisher", "Article", "PublishResult",
-    "REGISTRY", "get_publisher",
+    "Article", "PublishResult", "REGISTRY", "get_publisher",
 ]

@@ -4,7 +4,7 @@ writer.py —— DeepSeek 基于素材改写（标题≤30字 + 正文），并�
 from __future__ import annotations
 
 import re
-from publishers import Article
+from publishers.models import Article
 from .llm import chat
 
 

@@ -223,6 +223,32 @@ def set_article_status(article_id: str, req: StatusRequest):
     return {"ok": True, "id": article_id, "status": req.status}
 
 
+class EditArticleRequest(BaseModel):
+    title: str
+    body: str
+
+
+@app.put("/articles/{article_id}")
+def edit_article(article_id: str, req: EditArticleRequest):
+    """人工编辑标题/正文后重新质检；编辑过的稿件回到未发或待修复。"""
+    art = next((a for a in store.all_articles(limit=1000) if a["id"] == article_id), None)
+    if not art:
+        raise HTTPException(status_code=404, detail="稿件不存在")
+    title = req.title.strip()
+    body = req.body.strip()
+    if not (4 <= len(title) <= 60):
+        raise HTTPException(status_code=400, detail="标题需为 4–60 个字符")
+    if len(body) < 50:
+        raise HTTPException(status_code=400, detail="正文至少 50 个字符")
+    art.update(title=title, body=body)
+    status = _apply_qc(art)
+    try:
+        new_id = store.update_article(article_id, art, status)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return {"ok": True, "id": new_id, "status": status, **art}
+
+
 # ================= 文章预览页（只读）：干净的独立文章页，供 Wechatsync 等扩展提取同步 =================
 _ARTICLE_PAGE = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -358,6 +384,52 @@ def _sync_article_via_cli(art: dict, platforms: list[str], base_url: str,
 class SyncRequest(BaseModel):
     id: str
     platforms: list[str]
+
+
+class SyncPreflightRequest(BaseModel):
+    platforms: list[str]
+
+
+@app.post("/sync/preflight")
+def sync_preflight(req: SyncPreflightRequest):
+    """在真正同步前快速检查 CLI、Token、扩展连接与平台登录态。"""
+    platforms = [p.strip() for p in req.platforms if p and p.strip()]
+    if not platforms:
+        raise HTTPException(status_code=400, detail="至少选择一个平台")
+    token = os.environ.get("WECHATSYNC_TOKEN", "")
+    cli = _wechatsync_cli()
+    checks = {
+        "token": bool(token),
+        "cli": os.path.isfile(cli) and os.access(cli, os.X_OK),
+        "extension": False,
+    }
+    if not checks["token"]:
+        return {"ok": False, "checks": checks, "error": "未配置 WECHATSYNC_TOKEN"}
+    if not checks["cli"]:
+        return {"ok": False, "checks": checks, "error": f"Wechatsync CLI 不可执行：{cli}"}
+
+    env = os.environ.copy()
+    env["PATH"] = os.path.dirname(cli) + os.pathsep + env.get("PATH", "")
+    env["WECHATSYNC_TOKEN"] = token
+    results = []
+    for platform in platforms:
+        try:
+            proc = subprocess.run(
+                [cli, "--timeout", "5000", "auth", platform], env=env,
+                capture_output=True, text=True, timeout=8)
+            raw = ((proc.stdout or "") + "\n" + (proc.stderr or "")).replace(token, "***").strip()
+            low = raw.lower()
+            ok = proc.returncode == 0 and not any(x in low for x in ("未登录", "not logged", "失败", "error"))
+            results.append({"platform": platform, "ok": ok, "message": raw[-500:]})
+        except subprocess.TimeoutExpired:
+            results.append({"platform": platform, "ok": False,
+                            "message": "扩展连接超时，请打开浏览器并在 Wechatsync 扩展中重新连接 MCP"})
+        except Exception as e:
+            results.append({"platform": platform, "ok": False, "message": f"预检失败：{e}"})
+    checks["extension"] = any(r["message"] and "超时" not in r["message"] for r in results)
+    ok = all(r["ok"] for r in results)
+    return {"ok": ok, "checks": checks, "results": results,
+            "error": None if ok else "发布环境未就绪，请按结果修复后重试"}
 
 
 @app.post("/sync")

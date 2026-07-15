@@ -1,62 +1,87 @@
-# 头条自动化流水线（phase1：本地审阅 → 手动发）
+# FlowX
 
-每天定时：抓多平台热榜 → 按赛道筛选 → DeepSeek 出文(标题≤30字+正文) → Pexels 自动配封面
-→ 汇成本地网页 output/review.html。你打开网页，一键复制标题正文、下载配图，到头条手动发。
-内容验证 OK 后，settings.yaml 的 mode 从 review 改成 publish，即切换为浏览器自动发。
+FlowX 是一套面向中文内容团队的本地优先 AI 内容工作流：抓取多平台热点，按赛道归类，检索素材，生成文章与配图，自动质检和定向修订，再同步到多个内容平台的草稿箱。
 
-## 目录
-```
-hotspot/     ① 抓热榜 + ② 按赛道筛选
-tracks.yaml  赛道：方向开关 + 关键词 + 提示词（选方向在这）
-generate/    ③ 出文(writer) + 配封面图(illustrate) + DeepSeek客户端(llm)
-review/      ④ 生成审阅网页(render)
-publishers/  phase2 自动发布（toutiao 已填选择器；phase1 用不到）
-store/       去重 + 内部记录(SQLite)
-settings.yaml 模式/账号/条数/配图/热榜源
-run_daily.py 每日流水线（定时入口）
-output/      review.html + images/（生成物）
-```
+> 抓热点 → AI 写稿 → 配图 → 质检 → 定向优化 → 稿库 → 平台草稿箱 → 人工发布
 
-## 安装
+## 为什么是“本地优先”
+
+FlowX 的发布能力依赖本机浏览器中的 Wechatsync 扩展和各平台登录态。API Key、Cookie 与平台会话留在用户设备上；这也意味着当前完整版本不能原样运行在 Cloudflare Pages/Workers 等纯无服务器环境。Cloudflare 可承载公开产品站，核心工作台仍应在本机或常驻桌面主机运行。
+
+## 已有能力
+
+- 百度、头条直抓；抖音、微博、知乎、B 站、36 氪、澎湃等通过 DailyHotApi 聚合
+- 9 个内容赛道，可配置开关、关键词、写作提示词与展示顺序
+- 多关键词加权归类、跨平台话题合并、6 小时选题去重
+- Tavily → 博查素材检索回退链
+- DeepSeek 写稿、原报道图候选池与 Pexels 兜底
+- 规则 + AI 五维质检，绿/黄/红质量闸与防编造修订红线
+- 稿库、人工编辑、换图、重新质检、发布状态管理
+- Wechatsync 发布前连接预检、手动同步与 CLI 自动进草稿箱
+- APScheduler 定时流水线与运行记录
+
+## 快速开始
+
+要求：Python 3.11+。只有使用已冻结的 Playwright 兜底发布器时才需要额外安装 `requirements-publishers.txt` 和浏览器运行时。
+
 ```bash
-cd ~/toutiao-auto
-uv venv && source .venv/bin/activate
-uv pip install -r requirements.txt
+git clone https://github.com/Hans010101/FlowX.git
+cd FlowX
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-## 一次性准备（3 个 key/服务）
-1. DeepSeek（出文）：`export DEEPSEEK_API_KEY=你的key`
-2. Pexels（配图，免费）：注册 https://www.pexels.com/api/ 后 `export PEXELS_API_KEY=你的key`
-3. 热榜：默认用公开聚合API vvhan，**免Docker、免部署，无需任何设置**。
+打开 <http://127.0.0.1:8000>。至少需要配置 `DEEPSEEK_API_KEY` 与 `TAVILY_API_KEY`；其余变量见 [.env.example](.env.example)。
 
-## 选题方向（tracks.yaml）
-每个赛道 = 开关 + 关键词 + 提示词。只想跑体育科技？把 minsheng、yule 的 enabled 设 false。
-关键词跨赛道撞车会误判（如"曝光"归娱乐、"发布"归科技），删掉模糊词、只留强特征词最准。
+运行测试：
 
-## 跑（phase1）
-确认 settings.yaml 里 mode: review，然后：
 ```bash
-python run_daily.py
+python -m unittest discover -s tests -v
 ```
-跑完打开 output/review.html：每篇一张卡片，封面图 + 标题（复制）+ 正文（复制）+ 下载配图，
-底部小字标赛道/来源/时间（内部参考，不进复制内容）。复制到头条手动发。
 
-## 定时（launchd，每天自动）
-编辑 com.hans.toutiao-auto.plist：换真实路径、填 DEEPSEEK_API_KEY 和 PEXELS_API_KEY、改时间，然后：
-```bash
-cp com.hans.toutiao-auto.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.hans.toutiao-auto.plist
+## 自动同步到平台草稿箱
+
+1. 安装并登录 Wechatsync 浏览器扩展。
+2. 安装 Wechatsync CLI，设置 `WECHATSYNC_TOKEN` 和 `WECHATSYNC_CLI_PATH`。
+3. 在稿库点击“自动发布”。FlowX 会先检查 CLI、扩展连接和目标平台登录态；检查通过后才允许同步。
+
+注意：同步到草稿箱不等于公开发布。FlowX 无法感知用户在平台后台的最终发布动作，因此“标记已发”保持人工确认。
+
+## 项目结构
+
+```text
+app.py              FastAPI 接口与工作流编排
+static/             单页工作台
+hotspot/            热点抓取、合并与赛道归类
+research/           素材检索与回退链
+generate/           写稿、修订、配图
+quality/            规则与 AI 质检
+store/              SQLite 稿库和选题去重
+publishers/         已冻结的 Playwright 兜底发布器
+cloudflare-site/    可部署到 Cloudflare Pages 的公开产品站
+tests/              不依赖外部 API 的核心回归测试
 ```
-每天定时生成 review.html，你打开审阅即可。停用：launchctl unload 同路径。
 
-## 从"手动发"切到"自动发"（phase2）
-验证几天内容能用后：
-1. 确认 publishers/toutiao.py 的发布选择器（预览并发布→确认发布那步待补录）。
-2. settings.yaml 的 mode 改成 publish。
-之后 run_daily 会用浏览器自动发到头条（需先 python login.py hans_toutiao 登录过）。
+## 部署边界
 
-## 加账号/加平台
-加账号：accounts.yaml 复制一条改 name+profile_dir。加平台：填 publishers/baijiahao.py 并注册。
+- 本机/桌面主机：完整功能，包括浏览器扩展发布、SQLite 与定时任务。
+- Cloudflare Pages：公开产品介绍、文档与下载入口。
+- Cloudflare Workers：不支持本项目依赖的本机浏览器扩展、`subprocess`、持久 Python 调度进程与本地 SQLite，不能直接承载完整后端。
 
-## 安全
-DEEPSEEK/PEXELS key 用环境变量；profiles/ 是登录凭证已 .gitignore；仅个人自用。
+进一步说明见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) 和 [docs/PRODUCT-ROADMAP.md](docs/PRODUCT-ROADMAP.md)。
+
+## 安全原则
+
+- 不提交 `.env`、SQLite 数据库、运行日志、生成内容或浏览器 Profile。
+- `/settings` 只返回 Key 是否已配置，不返回 Key 内容。
+- CLI Token 只进入子进程环境，所有返回文本在展示前会脱敏。
+- 缺少来源的事实只能删除、软化或去掉具体数字，禁止为了通过质检而编造来源。
+
+如发现安全问题，请不要创建公开 Issue，按 [SECURITY.md](SECURITY.md) 中的方式联系维护者。
+
+## 许可证
+
+[MIT](LICENSE)
