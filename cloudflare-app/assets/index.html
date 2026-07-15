@@ -247,6 +247,51 @@
         margin-bottom: 16px;
         box-shadow: var(--shadow);
       }
+      .generation-notice {
+        display: none;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid #dfc47e;
+        border-radius: var(--radius);
+        background: var(--warn-bg);
+        color: var(--warn);
+        padding: 13px 16px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow);
+      }
+      .generation-notice.on {
+        display: flex;
+      }
+      .generation-notice.done {
+        border-color: #bfd5c5;
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .generation-notice.failed {
+        border-color: #e6c4be;
+        background: var(--stop-bg);
+        color: var(--stop);
+      }
+      .generation-notice .gen-copy {
+        min-width: 0;
+        flex: 1;
+      }
+      .generation-notice .gen-copy b,
+      .generation-notice .gen-copy span {
+        display: block;
+      }
+      .generation-notice .gen-copy span {
+        font-size: 12px;
+        margin-top: 2px;
+        opacity: 0.82;
+      }
+      .generation-notice .gen-close {
+        border: 0;
+        background: none;
+        color: inherit;
+        font-size: 18px;
+        padding: 3px 6px;
+      }
       .phead {
         display: flex;
         align-items: center;
@@ -938,16 +983,10 @@
             <span class="n">1</span
             ><span class="tx"><b>选题</b><span>抓热点 · 挑选</span></span>
           </button>
-          <button class="navitem" data-v="produce">
+          <button class="navitem" data-v="library">
             <span class="n">2</span
             ><span class="tx"
-              ><b>生产 · 审核</b><span>出文 · 质检 · 优化</span></span
-            >
-          </button>
-          <button class="navitem" data-v="library">
-            <span class="n">3</span
-            ><span class="tx"
-              ><b>稿库 · 发布</b><span>草稿 · 排版 · 发布</span></span
+              ><b>稿库 · 发布</b><span>修改 · 排版 · 发布</span></span
             >
           </button>
         </nav>
@@ -979,7 +1018,7 @@
               <div>
                 <p class="eyebrow">Step 01 · Discover</p>
                 <h1>选题</h1>
-                <p>从云端热榜发现今天值得写的题，按赛道筛选后送入生产</p>
+                <p>从云端热榜发现值得写的题，勾选后直接交给后台撰稿与质检</p>
               </div>
               <button
                 class="btn primary"
@@ -1009,59 +1048,17 @@
                 <button class="btn ghost" onclick="deleteSelectedTopics()">
                   删除选题
                 </button>
-                <button class="btn" onclick="generateSelected()">
-                  开始生成 →
+                <button class="btn" id="draftBtn" onclick="generateSelected()">
+                  开始撰稿 →
                 </button>
               </div>
-            </div>
-          </section>
-
-          <section class="view" id="produce">
-            <div class="viewhead">
-              <div>
-                <p class="eyebrow">Step 02 · Produce</p>
-                <h1>生产</h1>
-                <p>Tavily 优先、博查兜底搜索事实素材，DeepSeek 写稿并质检</p>
-              </div>
-              <button class="btn ghost" onclick="show('review')">
-                查看审核 →
-              </button>
-            </div>
-            <div class="runsum" id="produceSummary">
-              <b>等待选题</b
-              ><span class="muted">在“选题”中勾选内容后开始生成</span>
-            </div>
-            <div class="cards" id="produceCards">
-              <div class="empty">本轮还没有生成稿件</div>
-            </div>
-          </section>
-
-          <section class="view" id="review">
-            <div class="viewhead">
-              <div>
-                <p class="eyebrow">Step 02 · Review</p>
-                <h1>审核</h1>
-                <p>查看质检分数与具体问题，定向优化或人工编辑</p>
-              </div>
-              <div class="actions">
-                <button class="btn ghost" onclick="show('produce')">
-                  ← 返回生产
-                </button>
-                <button class="btn ghost" onclick="loadArticles()">
-                  ↻ 刷新
-                </button>
-              </div>
-            </div>
-            <div class="runsum" id="reviewSummary"></div>
-            <div class="cards" id="reviewCards">
-              <div class="empty">正在读取质检结果…</div>
             </div>
           </section>
 
           <section class="view" id="library">
             <div class="viewhead">
               <div>
-                <p class="eyebrow">Step 03 · Library & Publish</p>
+                <p class="eyebrow">Step 02 · Library & Publish</p>
                 <h1>稿库与发布</h1>
                 <p>统一管理稿件、封面、发布平台与自动发布任务</p>
               </div>
@@ -1070,6 +1067,14 @@
                   ↻ 刷新
                 </button>
               </div>
+            </div>
+            <div class="generation-notice" id="generationNotice" role="status" aria-live="polite">
+              <span id="generationIcon">✦</span>
+              <div class="gen-copy">
+                <b id="generationTitle">后台正在撰稿</b>
+                <span id="generationDetail">检索、写作和质检正在自动执行</span>
+              </div>
+              <button class="gen-close" onclick="closeGenerationNotice()" aria-label="关闭提示">×</button>
             </div>
             <div class="panel">
               <div class="phead">
@@ -1256,19 +1261,6 @@
       </main>
     </div>
 
-    <div class="modalbg" id="editModal">
-      <div class="modal">
-        <h2>稿件修改</h2>
-        <input type="hidden" id="editId" /><label class="field"
-          >标题<input id="editTitle" maxlength="60" /></label
-        ><label class="field">正文<textarea id="editBody"></textarea></label>
-        <div class="actions">
-          <button class="btn primary" onclick="saveEdit()">
-            保存并重新质检</button
-          ><button class="btn ghost" onclick="closeEdit()">取消</button>
-        </div>
-      </div>
-    </div>
     <div class="toast" id="toast"></div>
     <script>
       const TRACKS = {
@@ -1300,8 +1292,8 @@
         },
       };
       let articles = [],
-        generated = [],
-        filter = "all";
+        filter = "all",
+        generationBusy = false;
       let publishAccounts = [],
         publishRuns = {},
         publishJobs = [],
@@ -1352,13 +1344,12 @@
         return d;
       }
       function show(v) {
-        const navView = v === "review" ? "produce" : v;
         $$(".view").forEach((x) => x.classList.toggle("on", x.id === v));
         $$(".navitem").forEach((x) =>
-          x.classList.toggle("on", x.dataset.v === navView),
+          x.classList.toggle("on", x.dataset.v === v),
         );
         scrollTo({ top: 0 });
-        if (["review", "library"].includes(v)) loadArticles();
+        if (v === "library") loadArticles();
         if (v === "library") {
           refreshPublishConnections();
           setTimeout(() => refreshPublishConnections(), 1200);
@@ -1502,39 +1493,69 @@
         const nodes = $$("#hotspotBox input:checked");
         if (!nodes.length) return toast("请先勾选选题");
         if (nodes.length > 20) return toast("单次最多生成 20 篇");
-        show("produce");
-        $("#produceCards").innerHTML =
-          '<div class="empty">正在搜索素材、写作并质检，请稍候…</div>';
-        $("#produceSummary").innerHTML =
-          `<b>本轮 ${nodes.length} 篇</b><span class="muted">4 路并发处理中</span>`;
+        if (generationBusy) return toast("上一轮撰稿仍在后台进行");
+        const items = nodes.map((n) => ({
+          title: n.dataset.title,
+          track_key: n.dataset.track,
+          source: n.dataset.source,
+        }));
+        generationBusy = true;
+        const draftButton = $("#draftBtn");
+        draftButton.disabled = true;
+        draftButton.textContent = "后台撰稿中…";
+        filter = "all";
+        $$("#tabs .tab").forEach((tab) =>
+          tab.classList.toggle("on", tab.dataset.filter === "all"),
+        );
+        show("library");
+        setGenerationNotice(
+          "working",
+          `后台正在撰写 ${items.length} 篇稿件`,
+          "正在自动检索事实、生成正文并完成质量检查；你可以继续查看和发布已有稿件。",
+        );
         try {
           const d = await api("/generate", {
             method: "POST",
-            body: JSON.stringify({
-              items: nodes.map((n) => ({
-                title: n.dataset.title,
-                track_key: n.dataset.track,
-                source: n.dataset.source,
-              })),
-            }),
+            body: JSON.stringify({ items }),
           });
-          generated = d.results || [];
-          const ok = generated.filter((x) => x.ok),
-            fail = generated.length - ok.length;
-          $("#produceSummary").innerHTML =
-            `<b>本轮 ${generated.length} 篇</b><span style="color:var(--ok)">成功 ${ok.length}</span><span style="color:var(--stop)">失败 ${fail}</span>`;
-          $("#produceCards").innerHTML = generated
-            .map((x) =>
-              x.ok
-                ? cardHtml(x, "produce")
-                : `<div class="panel"><b>${esc(x.title)}</b><div style="color:var(--stop)">${esc(x.error)}</div></div>`,
-            )
-            .join("");
-          await loadArticles(false);
+          const results = d.results || [];
+          const ok = results.filter((x) => x.ok);
+          const ready = ok.filter((x) => x.qc_level !== "red");
+          const needsFix = ok.length - ready.length;
+          const fail = results.length - ok.length;
+          results.forEach((result, index) => {
+            if (result.ok) nodes[index]?.closest(".topic")?.remove();
+          });
+          recount();
+          await loadArticles();
+          setGenerationNotice(
+            fail ? "failed" : "done",
+            `${ok.length} 篇稿件已进入稿库`,
+            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败可返回选题重试` : ""}。`,
+          );
+          toast(`${ok.length} 篇稿件已完成后台撰写与质检`);
         } catch (e) {
-          $("#produceCards").innerHTML =
-            `<div class="empty">${esc(e.message)}</div>`;
+          setGenerationNotice(
+            "failed",
+            "本轮后台撰稿未完成",
+            `${e.message}。已选热点仍保留，可返回选题后重试。`,
+          );
+        } finally {
+          generationBusy = false;
+          draftButton.disabled = false;
+          draftButton.textContent = "开始撰稿 →";
         }
+      }
+      function setGenerationNotice(status, title, detail) {
+        const notice = $("#generationNotice");
+        notice.className = `generation-notice on${status === "done" ? " done" : status === "failed" ? " failed" : ""}`;
+        $("#generationIcon").textContent =
+          status === "done" ? "✓" : status === "failed" ? "!" : "✦";
+        $("#generationTitle").textContent = title;
+        $("#generationDetail").textContent = detail;
+      }
+      function closeGenerationNotice() {
+        $("#generationNotice").classList.remove("on");
       }
       function qinfo(a) {
         let p = a.qc_problems || [];
@@ -1914,13 +1935,8 @@
           ? ` style="background-image:url('${esc(a.cover_url)}')"`
           : "";
         let acts = "";
-        if (["produce", "review"].includes(ctx)) {
-          if (q.p.length)
-            acts += `<button class="btn tool sm" onclick="revise('${a.id}',this)">🔧 一键优化</button>`;
-          acts += `<button class="btn ghost sm" onclick="openEdit('${a.id}')">稿件修改</button>`;
-        }
         if (ctx === "library") {
-          acts = `<button class="btn ghost sm" onclick="openEdit('${a.id}')">稿件修改</button><button class="btn ghost sm" onclick="autoCover('${a.id}',this)">🖼 自动换封面</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : "一键发布"}</button>`;
+          acts = `<button class="btn ghost sm" onclick="revise('${a.id}',this)">稿件修改</button><button class="btn ghost sm" onclick="autoCover('${a.id}',this)">🖼 自动换封面</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : "一键发布"}</button>`;
           acts +=
             a.status === "已发"
               ? `<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`
@@ -1967,7 +1983,6 @@
             if (articleId !== activePublicationId) publishRuns[articleId] = statuses;
           }
           if (render) {
-            renderReview();
             renderLibrary();
           }
           if (
@@ -1979,18 +1994,6 @@
         } catch (e) {
           toast(e.message);
         }
-      }
-      function renderReview() {
-        const list = articles.filter(
-          (a) => a.status === "待修复" || qinfo(a).p.length,
-        );
-        const dist = { g: 0, y: 0, r: 0 };
-        articles.forEach((a) => dist[qinfo(a).cls]++);
-        $("#reviewSummary").innerHTML =
-          `<b>全部 ${articles.length} 篇</b><span style="color:var(--ok)">绿 ${dist.g}</span><span style="color:var(--warn)">黄 ${dist.y}</span><span style="color:var(--stop)">红 ${dist.r}</span>`;
-        $("#reviewCards").innerHTML =
-          list.map((a) => cardHtml(a, "review")).join("") ||
-          '<div class="empty">当前没有需要处理的质检问题</div>';
       }
       function renderLibrary() {
         const counts = { all: articles.length, 未发: 0, 待修复: 0, 已发: 0 };
@@ -2062,48 +2065,19 @@
       );
       async function revise(id, b) {
         b.disabled = true;
-        b.textContent = "优化中…";
+        b.textContent = "自动修改中…";
         try {
           await api("/revise", {
             method: "POST",
             body: JSON.stringify({ id }),
           });
-          toast("优化完成并已重新质检");
+          toast("已完成自动二次修改并重新质检");
           loadArticles();
         } catch (e) {
           toast(e.message);
         } finally {
           b.disabled = false;
-          b.textContent = "🔧 一键优化";
-        }
-      }
-      function openEdit(id) {
-        const a =
-          articles.find((x) => x.id === id) ||
-          generated.find((x) => x.id === id);
-        if (!a) return;
-        $("#editId").value = id;
-        $("#editTitle").value = a.title;
-        $("#editBody").value = a.body;
-        $("#editModal").classList.add("on");
-      }
-      function closeEdit() {
-        $("#editModal").classList.remove("on");
-      }
-      async function saveEdit() {
-        try {
-          await api("/articles/" + $("#editId").value, {
-            method: "PUT",
-            body: JSON.stringify({
-              title: $("#editTitle").value,
-              body: $("#editBody").value,
-            }),
-          });
-          closeEdit();
-          toast("已保存并重新质检");
-          loadArticles();
-        } catch (e) {
-          toast(e.message);
+          b.textContent = "稿件修改";
         }
       }
       async function setStatus(id, status) {
