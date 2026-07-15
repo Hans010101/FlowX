@@ -1,58 +1,1535 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlowX · 内容工作台</title>
-<style>
-:root{--brand:#AE352B;--brand-deep:#83261F;--brand-tint:#F3E4DC;--paper:#F4ECDD;--surface:#FDFAF3;--surface-2:#FBF5E9;--ink:#2A231E;--ink-soft:#7C7064;--ink-faint:#A99B8A;--line:#E6DAC6;--line-soft:#EFE6D5;--ok:#3B7A57;--ok-bg:#E8F0E9;--warn:#B0801F;--warn-bg:#F6EDD6;--stop:#DE3A32;--stop-bg:#FBE4E1;--radius:14px;--shadow:0 1px 2px #4a321e0d,0 6px 20px #4a321e0f;--side:250px}*{box-sizing:border-box}html,body{margin:0}body{background:var(--paper);color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}button,input,textarea{font:inherit}button{cursor:pointer}.app{display:flex;min-height:100vh}.side{width:var(--side);flex:none;position:sticky;top:0;height:100vh;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 16px 16px}.brand{display:flex;align-items:baseline;gap:9px;padding:4px 10px 22px}.brand b{font:800 24px/1 Georgia,serif;color:var(--brand)}.brand small{font-size:11px;color:var(--ink-soft)}.navlabel{font-weight:800;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);padding:0 12px 8px}.navitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;border:0;background:none;border-radius:11px;color:var(--ink-soft);margin-bottom:3px;position:relative}.navitem:hover{background:var(--surface-2);color:var(--ink)}.navitem.on{background:var(--brand-tint);color:var(--brand-deep)}.navitem.on:before{content:"";position:absolute;left:-16px;top:8px;bottom:8px;width:3px;background:var(--brand);border-radius:0 3px 3px 0}.navitem .n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--line);font-size:12px;font-weight:800}.navitem.on .n{background:var(--brand);border-color:var(--brand);color:white}.tx b{display:block;font-size:14px}.tx span{display:block;font-size:10.5px;color:var(--ink-faint)}.navdiv{height:1px;background:var(--line);margin:12px 6px}.userbox{margin-top:auto;border-top:1px solid var(--line);padding:14px 8px 2px}.user{display:flex;align-items:center;gap:9px}.avatar{width:32px;height:32px;border-radius:50%;background:var(--brand-tint);object-fit:cover}.userinfo{min-width:0;flex:1}.userinfo b,.userinfo span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userinfo b{font-size:12px}.userinfo span{font-size:10px;color:var(--ink-faint)}.logout{border:0;background:none;color:var(--ink-faint);padding:4px}.main{flex:1;min-width:0}.content{max-width:1050px;margin:auto;padding:32px 40px 70px}.view{display:none}.view.on{display:block}.viewhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}.viewhead h1{font:750 27px/1.2 Georgia,"Songti SC",serif;margin:0}.viewhead p{margin:5px 0 0;color:var(--ink-soft);font-size:13px}.eyebrow{font-size:10px!important;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--brand)!important;margin:0 0 4px!important}.panel,.setsec{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}.phead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}.phead .t{font-weight:700;font-size:15px}.barmark{display:inline-block;width:3px;height:14px;background:var(--brand);border-radius:2px;margin-right:9px;vertical-align:-2px}.muted{color:var(--ink-soft);font-size:12px}.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:7px 12px}.chip.on{background:var(--brand-tint);border-color:var(--brand);color:var(--brand-deep);font-weight:700}.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block}.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;padding:10px 17px;font-weight:700;border:1px solid transparent;background:var(--surface);color:var(--ink)}.btn.primary{background:var(--brand);color:white}.btn.primary:hover{background:var(--brand-deep)}.btn.ghost{border-color:var(--line)}.btn.tool{border-color:var(--brand);color:var(--brand)}.btn.sm{padding:6px 11px;font-size:12px;border-radius:8px}.btn:disabled{opacity:.5;cursor:wait}.trackhd{display:flex;align-items:center;gap:10px;margin:20px 0 9px}.trackhd .tk{font-weight:800;color:white;background:var(--ink);padding:3px 11px;border-radius:7px}.trackhd .ln{flex:1;height:1px;background:var(--line)}.topic{display:flex;align-items:center;gap:13px;padding:12px 14px;border:1px solid var(--line-soft);border-radius:11px;background:var(--surface);margin-bottom:8px}.topic:hover{border-color:var(--line);box-shadow:var(--shadow)}.topic.sel{border-color:var(--brand);background:var(--brand-tint)}.topic input{accent-color:var(--brand);width:18px;height:18px}.topic .ti{font-size:14px;font-weight:700}.topic .meta{font-size:11px;color:var(--ink-soft);margin-top:4px}.heat{color:var(--brand);font-weight:700}.selbar{position:sticky;bottom:18px;display:flex;align-items:center;justify-content:space-between;background:var(--ink);color:var(--paper);border-radius:12px;padding:12px 18px;margin-top:20px;box-shadow:0 10px 30px #2a231e38}.selbar .btn{background:white;color:var(--brand-deep)}.empty{text-align:center;color:var(--ink-faint);padding:55px 20px;border:1px dashed var(--line);border-radius:12px;background:#fdfaf37d}.runsum{display:flex;align-items:center;gap:15px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 16px;margin-bottom:15px;box-shadow:var(--shadow);flex-wrap:wrap}.cards{display:grid;gap:15px}.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden;box-shadow:var(--shadow)}.card.red{border-color:#e6c4be;box-shadow:-3px 0 0 var(--stop) inset,var(--shadow)}.cov{height:86px;background:linear-gradient(120deg,#eadfce,#d9c8af);display:grid;place-items:center;color:#aa977b;font-size:11px;letter-spacing:.08em}.cardin{padding:16px 18px 18px}.row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tkmini{font-size:11px;font-weight:700;color:var(--brand-deep);background:var(--brand-tint);border-radius:6px;padding:2px 8px}.qc,.statustag{font-size:11px;font-weight:700;border-radius:20px;padding:3px 9px}.qc.g{background:var(--ok-bg);color:var(--ok)}.qc.y{background:var(--warn-bg);color:var(--warn)}.qc.r{background:var(--stop-bg);color:var(--stop)}.statustag{margin-left:auto;background:var(--surface-2);color:var(--ink-soft);border:1px solid var(--line)}.statustag.yes{background:var(--ok-bg);color:var(--ok);border:0}.card h3{font-size:17px;margin:10px 0 7px}.body{white-space:pre-wrap;color:var(--ink-soft);max-height:4.9em;overflow:hidden}.body.full{max-height:none}.probs{margin-top:12px;border:1px solid var(--line);background:var(--surface-2);border-radius:9px;padding:10px 12px;color:var(--ink-soft);font-size:12px}.probs.bad{border-color:#e6c4be;background:var(--stop-bg);color:var(--stop)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}.tab{padding:9px 14px;border:0;background:none;color:var(--ink-soft);font-weight:700;border-bottom:2px solid transparent;margin-bottom:-1px}.tab.on{color:var(--brand);border-color:var(--brand)}.cnt{font-size:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:0 6px}.setsec h2{font-size:16px;margin:0 0 4px}.setsec .sub{margin:0 0 14px;color:var(--ink-soft);font-size:12px}.chain{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.node{border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:11px 14px}.node.primary{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-tint)}.keyrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line-soft)}.keyrow:first-of-type{border-top:0}.keyrow label{width:110px;font-weight:700}.keyrow input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:9px;background:white}.accountrow{display:flex;align-items:center;gap:12px}.accountrow .avatar{width:42px;height:42px}.modalbg{position:fixed;inset:0;background:#211b17a8;display:none;align-items:center;justify-content:center;padding:20px;z-index:20}.modalbg.on{display:flex}.modal{width:min(720px,100%);max-height:90vh;overflow:auto;background:var(--surface);border-radius:14px;padding:22px}.field{display:block;font-weight:700;margin:12px 0}.field input,.field textarea{display:block;width:100%;margin-top:5px;border:1px solid var(--line);border-radius:8px;padding:10px;background:white}.field textarea{min-height:280px;resize:vertical}.toast{position:fixed;right:22px;bottom:22px;background:var(--ink);color:white;border-radius:9px;padding:10px 15px;opacity:0;transform:translateY(8px);transition:.2s;z-index:30}.toast.on{opacity:1;transform:none}@media(max-width:880px){:root{--side:70px}.brand small,.navlabel,.tx,.userinfo,.side .userbox .logout{display:none}.brand{justify-content:center;padding:4px 0 18px}.navitem{justify-content:center;padding:10px 0}.userbox{display:flex;justify-content:center}.content{padding:26px 20px 60px}}@media(max-width:560px){.app{display:block}.side{position:static;width:100%;height:auto;padding:12px}.brand{justify-content:flex-start}.side .navlabel,.side .tx{display:block}.side nav{display:flex;overflow:auto;gap:4px}.navitem{min-width:92px;justify-content:flex-start}.navitem:before,.navdiv,.userbox{display:none}.content{padding:22px 14px 60px}.viewhead{align-items:flex-start}.selbar{bottom:8px}.keyrow{align-items:flex-start;flex-direction:column}.keyrow input{width:100%}}
-</style></head><body><div class="app"><aside class="side"><div class="brand"><b>FlowX</b><small>内容工作台</small></div><div class="navlabel">工作流</div><nav>
-<button class="navitem on" data-v="pick"><span class="n">1</span><span class="tx"><b>选题</b><span>抓热点 · 挑选</span></span></button>
-<button class="navitem" data-v="produce"><span class="n">2</span><span class="tx"><b>生产</b><span>搜索 · 出文</span></span></button>
-<button class="navitem" data-v="review"><span class="n">3</span><span class="tx"><b>审核</b><span>质检 · 优化</span></span></button>
-<button class="navitem" data-v="library"><span class="n">4</span><span class="tx"><b>稿库</b><span>编辑 · 状态</span></span></button>
-<button class="navitem" data-v="publish"><span class="n">5</span><span class="tx"><b>发布</b><span>复制 · 归档</span></span></button></nav><div class="navdiv"></div>
-<button class="navitem" data-v="settings"><span class="n">⚙</span><span class="tx"><b>设置</b><span>搜索 · 账号</span></span></button>
-<div class="userbox"><div class="user"><img class="avatar" id="userAvatar"><div class="userinfo"><b id="userName">正在读取账号</b><span id="userEmail"></span></div><a class="logout" href="/auth/logout" title="退出登录" aria-label="退出登录">↗</a></div></div></aside><main class="main"><div class="content">
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>FlowX · 内容工作台</title>
+    <style>
+      :root {
+        --brand: #ae352b;
+        --brand-deep: #83261f;
+        --brand-tint: #f3e4dc;
+        --paper: #f4ecdd;
+        --surface: #fdfaf3;
+        --surface-2: #fbf5e9;
+        --ink: #2a231e;
+        --ink-soft: #7c7064;
+        --ink-faint: #a99b8a;
+        --line: #e6dac6;
+        --line-soft: #efe6d5;
+        --ok: #3b7a57;
+        --ok-bg: #e8f0e9;
+        --warn: #b0801f;
+        --warn-bg: #f6edd6;
+        --stop: #de3a32;
+        --stop-bg: #fbe4e1;
+        --radius: 14px;
+        --shadow: 0 1px 2px #4a321e0d, 0 6px 20px #4a321e0f;
+        --side: 250px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          14px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      .app {
+        display: flex;
+        min-height: 100vh;
+      }
+      .side {
+        width: var(--side);
+        flex: none;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        background: var(--surface);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        padding: 22px 16px 16px;
+      }
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        padding: 4px 10px 22px;
+      }
+      .brand b {
+        font:
+          800 24px/1 Georgia,
+          serif;
+        color: var(--brand);
+      }
+      .brand small {
+        font-size: 11px;
+        color: var(--ink-soft);
+      }
+      .navlabel {
+        font-weight: 800;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding: 0 12px 8px;
+      }
+      .navitem {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        text-align: left;
+        padding: 10px 12px;
+        border: 0;
+        background: none;
+        border-radius: 11px;
+        color: var(--ink-soft);
+        margin-bottom: 3px;
+        position: relative;
+      }
+      .navitem:hover {
+        background: var(--surface-2);
+        color: var(--ink);
+      }
+      .navitem.on {
+        background: var(--brand-tint);
+        color: var(--brand-deep);
+      }
+      .navitem.on:before {
+        content: "";
+        position: absolute;
+        left: -16px;
+        top: 8px;
+        bottom: 8px;
+        width: 3px;
+        background: var(--brand);
+        border-radius: 0 3px 3px 0;
+      }
+      .navitem .n {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .navitem.on .n {
+        background: var(--brand);
+        border-color: var(--brand);
+        color: white;
+      }
+      .tx b {
+        display: block;
+        font-size: 14px;
+      }
+      .tx span {
+        display: block;
+        font-size: 10.5px;
+        color: var(--ink-faint);
+      }
+      .navdiv {
+        height: 1px;
+        background: var(--line);
+        margin: 12px 6px;
+      }
+      .userbox {
+        margin-top: auto;
+        border-top: 1px solid var(--line);
+        padding: 14px 8px 2px;
+      }
+      .user {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--brand-tint);
+        object-fit: cover;
+      }
+      .userinfo {
+        min-width: 0;
+        flex: 1;
+      }
+      .userinfo b,
+      .userinfo span {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .userinfo b {
+        font-size: 12px;
+      }
+      .userinfo span {
+        font-size: 10px;
+        color: var(--ink-faint);
+      }
+      .logout {
+        border: 0;
+        background: none;
+        color: var(--ink-faint);
+        padding: 4px;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+      }
+      .content {
+        max-width: 1050px;
+        margin: auto;
+        padding: 32px 40px 70px;
+      }
+      .view {
+        display: none;
+      }
+      .view.on {
+        display: block;
+      }
+      .viewhead {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 22px;
+      }
+      .viewhead h1 {
+        font:
+          750 27px/1.2 Georgia,
+          "Songti SC",
+          serif;
+        margin: 0;
+      }
+      .viewhead p {
+        margin: 5px 0 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+      .eyebrow {
+        font-size: 10px !important;
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--brand) !important;
+        margin: 0 0 4px !important;
+      }
+      .panel,
+      .setsec {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 18px 20px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow);
+      }
+      .phead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 13px;
+      }
+      .phead .t {
+        font-weight: 700;
+        font-size: 15px;
+      }
+      .barmark {
+        display: inline-block;
+        width: 3px;
+        height: 14px;
+        background: var(--brand);
+        border-radius: 2px;
+        margin-right: 9px;
+        vertical-align: -2px;
+      }
+      .muted {
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+      .chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-2);
+        padding: 7px 12px;
+      }
+      .chip.on {
+        background: var(--brand-tint);
+        border-color: var(--brand);
+        color: var(--brand-deep);
+        font-weight: 700;
+      }
+      button.chip {
+        cursor: pointer;
+        color: var(--ink-soft);
+      }
+      .chip.bad {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--ok);
+        display: inline-block;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border-radius: 10px;
+        padding: 10px 17px;
+        font-weight: 700;
+        border: 1px solid transparent;
+        background: var(--surface);
+        color: var(--ink);
+      }
+      .btn.primary {
+        background: var(--brand);
+        color: white;
+      }
+      .btn.primary:hover {
+        background: var(--brand-deep);
+      }
+      .btn.ghost {
+        border-color: var(--line);
+      }
+      .btn.tool {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+      .btn.sm {
+        padding: 6px 11px;
+        font-size: 12px;
+        border-radius: 8px;
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      .trackhd {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 20px 0 9px;
+      }
+      .trackhd .tk {
+        font-weight: 800;
+        color: white;
+        background: var(--ink);
+        padding: 3px 11px;
+        border-radius: 7px;
+      }
+      .trackhd .ln {
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+      }
+      .topic {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        padding: 12px 14px;
+        border: 1px solid var(--line-soft);
+        border-radius: 11px;
+        background: var(--surface);
+        margin-bottom: 8px;
+      }
+      .topic:hover {
+        border-color: var(--line);
+        box-shadow: var(--shadow);
+      }
+      .topic.sel {
+        border-color: var(--brand);
+        background: var(--brand-tint);
+      }
+      .topic input {
+        accent-color: var(--brand);
+        width: 18px;
+        height: 18px;
+      }
+      .topic .ti {
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .topic .meta {
+        font-size: 11px;
+        color: var(--ink-soft);
+        margin-top: 4px;
+      }
+      .heat {
+        color: var(--brand);
+        font-weight: 700;
+      }
+      .selbar {
+        position: sticky;
+        bottom: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 12px;
+        padding: 12px 18px;
+        margin-top: 20px;
+        box-shadow: 0 10px 30px #2a231e38;
+      }
+      .selbar .btn {
+        background: white;
+        color: var(--brand-deep);
+      }
+      .empty {
+        text-align: center;
+        color: var(--ink-faint);
+        padding: 55px 20px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        background: #fdfaf37d;
+      }
+      .runsum {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 11px 16px;
+        margin-bottom: 15px;
+        box-shadow: var(--shadow);
+        flex-wrap: wrap;
+      }
+      .cards {
+        display: grid;
+        gap: 15px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+      .card.red {
+        border-color: #e6c4be;
+        box-shadow:
+          -3px 0 0 var(--stop) inset,
+          var(--shadow);
+      }
+      .cov {
+        height: 118px;
+        background: linear-gradient(120deg, #eadfce, #d9c8af);
+        background-position: center;
+        background-size: cover;
+        display: grid;
+        place-items: center;
+        color: #aa977b;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+      }
+      .cardin {
+        padding: 16px 18px 18px;
+      }
+      .row1 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .tkmini {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--brand-deep);
+        background: var(--brand-tint);
+        border-radius: 6px;
+        padding: 2px 8px;
+      }
+      .qc,
+      .statustag {
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 20px;
+        padding: 3px 9px;
+      }
+      .qc.g {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .qc.y {
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+      .qc.r {
+        background: var(--stop-bg);
+        color: var(--stop);
+      }
+      .statustag {
+        margin-left: auto;
+        background: var(--surface-2);
+        color: var(--ink-soft);
+        border: 1px solid var(--line);
+      }
+      .statustag.yes {
+        background: var(--ok-bg);
+        color: var(--ok);
+        border: 0;
+      }
+      .card h3 {
+        font-size: 17px;
+        margin: 10px 0 7px;
+      }
+      .body {
+        white-space: pre-wrap;
+        color: var(--ink-soft);
+        max-height: 4.9em;
+        overflow: hidden;
+      }
+      .body.full {
+        max-height: none;
+      }
+      .probs {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+        border-radius: 9px;
+        padding: 10px 12px;
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+      .probs.bad {
+        border-color: #e6c4be;
+        background: var(--stop-bg);
+        color: var(--stop);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 13px;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .tab {
+        padding: 9px 14px;
+        border: 0;
+        background: none;
+        color: var(--ink-soft);
+        font-weight: 700;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tab.on {
+        color: var(--brand);
+        border-color: var(--brand);
+      }
+      .cnt {
+        font-size: 10px;
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 0 6px;
+      }
+      .setsec h2 {
+        font-size: 16px;
+        margin: 0 0 4px;
+      }
+      .setsec .sub {
+        margin: 0 0 14px;
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+      .chain {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .node {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-2);
+        padding: 11px 14px;
+      }
+      .node.primary {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px var(--brand-tint);
+      }
+      .keyrow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+        border-top: 1px solid var(--line-soft);
+      }
+      .keyrow:first-of-type {
+        border-top: 0;
+      }
+      .keyrow label {
+        width: 120px;
+        font-weight: 700;
+      }
+      .keyrow input {
+        flex: 1;
+        min-width: 180px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px;
+        background: white;
+      }
+      .accountrow {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .accountrow .avatar {
+        width: 42px;
+        height: 42px;
+      }
+      .modalbg {
+        position: fixed;
+        inset: 0;
+        background: #211b17a8;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 20;
+      }
+      .modalbg.on {
+        display: flex;
+      }
+      .modal {
+        width: min(720px, 100%);
+        max-height: 90vh;
+        overflow: auto;
+        background: var(--surface);
+        border-radius: 14px;
+        padding: 22px;
+      }
+      .field {
+        display: block;
+        font-weight: 700;
+        margin: 12px 0;
+      }
+      .field input,
+      .field textarea {
+        display: block;
+        width: 100%;
+        margin-top: 5px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        background: white;
+      }
+      .field textarea {
+        min-height: 280px;
+        resize: vertical;
+      }
+      .toast {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        background: var(--ink);
+        color: white;
+        border-radius: 9px;
+        padding: 10px 15px;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: 0.2s;
+        z-index: 30;
+      }
+      .toast.on {
+        opacity: 1;
+        transform: none;
+      }
+      @media (max-width: 880px) {
+        :root {
+          --side: 70px;
+        }
+        .brand small,
+        .navlabel,
+        .tx,
+        .userinfo,
+        .side .userbox .logout {
+          display: none;
+        }
+        .brand {
+          justify-content: center;
+          padding: 4px 0 18px;
+        }
+        .navitem {
+          justify-content: center;
+          padding: 10px 0;
+        }
+        .userbox {
+          display: flex;
+          justify-content: center;
+        }
+        .content {
+          padding: 26px 20px 60px;
+        }
+      }
+      @media (max-width: 560px) {
+        .app {
+          display: block;
+        }
+        .side {
+          position: static;
+          width: 100%;
+          height: auto;
+          padding: 12px;
+        }
+        .brand {
+          justify-content: flex-start;
+        }
+        .side .navlabel,
+        .side .tx {
+          display: block;
+        }
+        .side nav {
+          display: flex;
+          overflow: auto;
+          gap: 4px;
+        }
+        .navitem {
+          min-width: 120px;
+          justify-content: flex-start;
+        }
+        .navitem:before,
+        .navdiv,
+        .userbox {
+          display: none;
+        }
+        .content {
+          padding: 22px 14px 60px;
+        }
+        .viewhead {
+          align-items: flex-start;
+        }
+        .selbar {
+          bottom: 8px;
+        }
+        .keyrow {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .keyrow input {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="side">
+        <div class="brand"><b>FlowX</b><small>内容工作台</small></div>
+        <div class="navlabel">工作流</div>
+        <nav>
+          <button class="navitem on" data-v="pick">
+            <span class="n">1</span
+            ><span class="tx"><b>选题</b><span>抓热点 · 挑选</span></span>
+          </button>
+          <button class="navitem" data-v="produce">
+            <span class="n">2</span
+            ><span class="tx"
+              ><b>生产 · 审核</b><span>出文 · 质检 · 优化</span></span
+            >
+          </button>
+          <button class="navitem" data-v="library">
+            <span class="n">3</span
+            ><span class="tx"
+              ><b>稿库 · 发布</b><span>草稿 · 排版 · 发布</span></span
+            >
+          </button>
+        </nav>
+        <div class="navdiv"></div>
+        <button class="navitem" data-v="settings">
+          <span class="n">⚙</span
+          ><span class="tx"><b>设置</b><span>搜索 · 账号</span></span>
+        </button>
+        <div class="userbox">
+          <div class="user">
+            <img class="avatar" id="userAvatar" />
+            <div class="userinfo">
+              <b id="userName">正在读取账号</b><span id="userEmail"></span>
+            </div>
+            <a
+              class="logout"
+              href="/auth/logout"
+              title="退出登录"
+              aria-label="退出登录"
+              >↗</a
+            >
+          </div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="content">
+          <section class="view on" id="pick">
+            <div class="viewhead">
+              <div>
+                <p class="eyebrow">Step 01 · Discover</p>
+                <h1>选题</h1>
+                <p>从云端热榜发现今天值得写的题，按赛道筛选后送入生产</p>
+              </div>
+              <button
+                class="btn primary"
+                id="fetchBtn"
+                onclick="loadHotspots()"
+              >
+                抓取今日热点 →
+              </button>
+            </div>
+            <div class="panel">
+              <div class="phead">
+                <div class="t"><span class="barmark"></span>热点来源</div>
+                <span class="muted" id="sourceSummary">正在读取来源…</span>
+              </div>
+              <div class="chips" id="sourceChips"></div>
+            </div>
+            <div class="panel">
+              <div class="phead">
+                <div class="t"><span class="barmark"></span>赛道方向</div>
+              </div>
+              <div class="chips" id="trackChips"></div>
+            </div>
+            <div id="hotspotBox" class="empty">点击“抓取今日热点”开始</div>
+            <div class="selbar">
+              <b id="selN">已选 0 篇</b
+              ><button class="btn" onclick="generateSelected()">
+                开始生成 →
+              </button>
+            </div>
+          </section>
 
-<section class="view on" id="pick"><div class="viewhead"><div><p class="eyebrow">Step 01 · Discover</p><h1>选题</h1><p>从云端热榜发现今天值得写的题，按赛道筛选后送入生产</p></div><button class="btn primary" id="fetchBtn" onclick="loadHotspots()">抓取今日热点 →</button></div>
-<div class="panel"><div class="phead"><div class="t"><span class="barmark"></span>热点来源</div><span class="muted">Cloudflare 边缘直连</span></div><div class="chips"><span class="chip on"><span class="dot"></span>百度 · 官方直抓</span><span class="chip on"><span class="dot"></span>今日头条 · 官方直抓</span></div></div>
-<div class="panel"><div class="phead"><div class="t"><span class="barmark"></span>赛道方向</div></div><div class="chips" id="trackChips"></div></div><div id="hotspotBox" class="empty">点击“抓取今日热点”开始</div><div class="selbar"><b id="selN">已选 0 篇</b><button class="btn" onclick="generateSelected()">开始生成 →</button></div></section>
+          <section class="view" id="produce">
+            <div class="viewhead">
+              <div>
+                <p class="eyebrow">Step 02 · Produce</p>
+                <h1>生产</h1>
+                <p>Tavily 优先、博查兜底搜索事实素材，DeepSeek 写稿并质检</p>
+              </div>
+              <button class="btn ghost" onclick="show('review')">
+                查看审核 →
+              </button>
+            </div>
+            <div class="runsum" id="produceSummary">
+              <b>等待选题</b
+              ><span class="muted">在“选题”中勾选内容后开始生成</span>
+            </div>
+            <div class="cards" id="produceCards">
+              <div class="empty">本轮还没有生成稿件</div>
+            </div>
+          </section>
 
-<section class="view" id="produce"><div class="viewhead"><div><p class="eyebrow">Step 02 · Produce</p><h1>生产</h1><p>Tavily 搜索事实素材，DeepSeek 完成写稿并自动进入质检</p></div></div><div class="runsum" id="produceSummary"><b>等待选题</b><span class="muted">在“选题”中勾选内容后开始生成</span></div><div class="cards" id="produceCards"><div class="empty">本轮还没有生成稿件</div></div></section>
+          <section class="view" id="review">
+            <div class="viewhead">
+              <div>
+                <p class="eyebrow">Step 02 · Review</p>
+                <h1>审核</h1>
+                <p>查看质检分数与具体问题，定向优化或人工编辑</p>
+              </div>
+              <div class="actions">
+                <button class="btn ghost" onclick="show('produce')">
+                  ← 返回生产
+                </button>
+                <button class="btn ghost" onclick="loadArticles()">
+                  ↻ 刷新
+                </button>
+              </div>
+            </div>
+            <div class="runsum" id="reviewSummary"></div>
+            <div class="cards" id="reviewCards">
+              <div class="empty">正在读取质检结果…</div>
+            </div>
+          </section>
 
-<section class="view" id="review"><div class="viewhead"><div><p class="eyebrow">Step 03 · Review</p><h1>审核</h1><p>查看质检分数与具体问题，定向优化或人工编辑</p></div><button class="btn ghost" onclick="loadArticles()">↻ 刷新</button></div><div class="runsum" id="reviewSummary"></div><div class="cards" id="reviewCards"><div class="empty">正在读取质检结果…</div></div></section>
+          <section class="view" id="library">
+            <div class="viewhead">
+              <div>
+                <p class="eyebrow">Step 03 · Library</p>
+                <h1>稿库</h1>
+                <p>管理全部稿件、状态与历史内容</p>
+              </div>
+              <div class="actions">
+                <button class="btn ghost" onclick="loadArticles()">
+                  ↻ 刷新
+                </button>
+                <button class="btn ghost" onclick="show('publish')">
+                  进入发布 →
+                </button>
+              </div>
+            </div>
+            <div class="tabs" id="tabs">
+              <button class="tab on" data-filter="all">
+                全部 <span class="cnt">0</span></button
+              ><button class="tab" data-filter="未发">
+                未发 <span class="cnt">0</span></button
+              ><button class="tab" data-filter="待修复">
+                待修复 <span class="cnt">0</span></button
+              ><button class="tab" data-filter="已发">
+                已发 <span class="cnt">0</span>
+              </button>
+            </div>
+            <div class="cards" id="libraryCards"></div>
+          </section>
 
-<section class="view" id="library"><div class="viewhead"><div><p class="eyebrow">Step 04 · Library</p><h1>稿库</h1><p>管理全部稿件、状态与历史内容</p></div><button class="btn ghost" onclick="loadArticles()">↻ 刷新</button></div><div class="tabs" id="tabs"><button class="tab on" data-filter="all">全部 <span class="cnt">0</span></button><button class="tab" data-filter="未发">未发 <span class="cnt">0</span></button><button class="tab" data-filter="待修复">待修复 <span class="cnt">0</span></button><button class="tab" data-filter="已发">已发 <span class="cnt">0</span></button></div><div class="cards" id="libraryCards"></div></section>
+          <section class="view" id="publish">
+            <div class="viewhead">
+              <div>
+                <p class="eyebrow">Step 03 · Publish</p>
+                <h1>发布</h1>
+                <p>复制合格稿件到目标平台，发布完成后归档状态</p>
+              </div>
+              <button class="btn ghost" onclick="show('library')">
+                ← 返回稿库
+              </button>
+            </div>
+            <div class="panel">
+              <div class="phead">
+                <div class="t"><span class="barmark"></span>云端发布说明</div>
+              </div>
+              <div class="muted">
+                Cloudflare 无法访问你电脑里的平台 Cookie 与 Wechatsync
+                扩展，因此这里提供审核后的标题/正文复制和发布归档；本地完整版仍可同步到平台草稿箱。
+              </div>
+            </div>
+            <div class="cards" id="publishCards"></div>
+          </section>
 
-<section class="view" id="publish"><div class="viewhead"><div><p class="eyebrow">Step 05 · Publish</p><h1>发布</h1><p>复制合格稿件到目标平台，发布完成后归档状态</p></div></div><div class="panel"><div class="phead"><div class="t"><span class="barmark"></span>云端发布说明</div></div><div class="muted">Cloudflare 无法访问你电脑里的平台 Cookie 与 Wechatsync 扩展，因此这里提供审核后的标题/正文复制和发布归档；本地完整版仍可同步到平台草稿箱。</div></div><div class="cards" id="publishCards"></div></section>
+          <section class="view" id="settings">
+            <div class="viewhead">
+              <div>
+                <p class="eyebrow">Configuration</p>
+                <h1>设置</h1>
+                <p>配置一次，日常工作流无需反复调整</p>
+              </div>
+            </div>
+            <div class="setsec">
+              <h2>🔎 搜索与生成</h2>
+              <p class="sub">
+                Tavily 优先搜索，博查在其不可用时自动兜底，Pexels
+                提供文章配图，DeepSeek 负责写作、质检和定向优化。所有 Key
+                只绑定当前 Google 邮箱，永不回显。
+              </p>
+              <div class="chain">
+                <div class="node primary">
+                  <b>Tavily</b>
+                  <div class="muted">素材搜索 · 首选</div>
+                </div>
+                <b style="color: var(--brand)">→</b>
+                <div class="node">
+                  <b>博查</b>
+                  <div class="muted">搜索兜底</div>
+                </div>
+                <b style="color: var(--brand)">+</b>
+                <div class="node">
+                  <b>Pexels</b>
+                  <div class="muted">图片素材</div>
+                </div>
+                <b style="color: var(--brand)">→</b>
+                <div class="node">
+                  <b>DeepSeek</b>
+                  <div class="muted">生成 · 质检 · 优化</div>
+                </div>
+              </div>
+              <div style="margin-top: 14px">
+                <div class="keyrow">
+                  <label>DeepSeek Key</label
+                  ><input
+                    id="deepseekKey"
+                    type="password"
+                    placeholder="留空保留当前账号已有 Key"
+                  /><span id="deepseekStatus" class="muted"></span>
+                </div>
+                <div class="keyrow">
+                  <label>Tavily Key</label
+                  ><input
+                    id="tavilyKey"
+                    type="password"
+                    placeholder="留空保留当前账号已有 Key"
+                  /><span id="tavilyStatus" class="muted"></span>
+                </div>
+                <div class="keyrow">
+                  <label>博查 Key</label
+                  ><input
+                    id="bochaKey"
+                    type="password"
+                    placeholder="留空保留当前账号已有 Key"
+                  /><span id="bochaStatus" class="muted"></span>
+                </div>
+                <div class="keyrow">
+                  <label>Pexels Key</label
+                  ><input
+                    id="pexelsKey"
+                    type="password"
+                    placeholder="留空保留当前账号已有 Key"
+                  /><span id="pexelsStatus" class="muted"></span>
+                </div>
+                <div class="actions">
+                  <button class="btn primary sm" onclick="saveKeys()">
+                    保存当前账号 API 设置
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="setsec">
+              <h2>📡 热点来源</h2>
+              <p class="sub">
+                8 个来源由 Worker 优先直抓，单个平台不可用时自动回退到
+                DailyHotApi。可按账号启停，并可切换到你自己的聚合服务地址。
+              </p>
+              <div class="chips" id="settingsSourceChips"></div>
+              <div class="keyrow" style="margin-top: 12px">
+                <label>DailyHot 地址</label
+                ><input
+                  id="dailyhotBase"
+                  type="url"
+                  placeholder="https://api-hot.imsyy.top"
+                /><span class="muted">留空使用公共地址</span>
+              </div>
+              <div class="actions">
+                <button class="btn primary sm" onclick="savePreferences()">
+                  保存热点与赛道设置
+                </button>
+              </div>
+            </div>
+            <div class="setsec">
+              <h2>🎯 赛道管理</h2>
+              <p class="sub">
+                云端按关键词加权归类，短泛词不会抢走更具体的赛道。
+              </p>
+              <div id="trackSettings"></div>
+            </div>
+            <div class="setsec">
+              <h2>👤 Google 账号</h2>
+              <p class="sub">
+                API Key 与稿库均按当前邮箱独立保存。退出后可重新选择 Google
+                账号；安全会话最长保持 30 天。
+              </p>
+              <div class="accountrow">
+                <img class="avatar" id="accountAvatar" />
+                <div>
+                  <b id="accountName"></b>
+                  <div class="muted" id="accountEmail"></div>
+                </div>
+                <a
+                  class="btn ghost sm"
+                  href="/auth/logout"
+                  style="margin-left: auto"
+                  >退出并切换账号</a
+                >
+              </div>
+            </div>
+            <div class="setsec">
+              <h2>☁ Cloudflare 状态</h2>
+              <p class="sub">
+                Workers 负责接口与安全会话；D1 亚太数据库保存稿件和加密配置。
+              </p>
+              <div class="chips">
+                <span class="chip on"><span class="dot"></span>Worker 在线</span
+                ><span class="chip on"><span class="dot"></span>D1 APAC</span
+                ><span class="chip" id="regionChip">边缘节点检测中</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
 
-<section class="view" id="settings"><div class="viewhead"><div><p class="eyebrow">Configuration</p><h1>设置</h1><p>配置一次，日常工作流无需反复调整</p></div></div>
-<div class="setsec"><h2>🔎 搜索与生成</h2><p class="sub">Tavily 负责事实素材，DeepSeek 负责写作、质检和定向优化。Key 在 Worker 内加密保存，并只绑定当前 Google 邮箱，永不回显。</p><div class="chain"><div class="node primary"><b>Tavily</b><div class="muted">素材搜索 · 免费优先</div></div><b style="color:var(--brand)">→</b><div class="node"><b>DeepSeek</b><div class="muted">生成 · 质检 · 优化</div></div></div><div style="margin-top:14px"><div class="keyrow"><label>DeepSeek Key</label><input id="deepseekKey" type="password" placeholder="留空保留当前账号已有 Key"><span id="deepseekStatus" class="muted"></span></div><div class="keyrow"><label>Tavily Key</label><input id="tavilyKey" type="password" placeholder="留空保留当前账号已有 Key"><span id="tavilyStatus" class="muted"></span></div><div class="actions"><button class="btn primary sm" onclick="saveKeys()">保存当前账号 API 设置</button></div></div></div>
-<div class="setsec"><h2>🎯 赛道管理</h2><p class="sub">云端按关键词加权归类，短泛词不会抢走更具体的赛道。</p><div id="trackSettings"></div></div>
-<div class="setsec"><h2>👤 Google 账号</h2><p class="sub">API Key 与稿库均按当前邮箱独立保存。退出后可重新选择 Google 账号；安全会话最长保持 30 天。</p><div class="accountrow"><img class="avatar" id="accountAvatar"><div><b id="accountName"></b><div class="muted" id="accountEmail"></div></div><a class="btn ghost sm" href="/auth/logout" style="margin-left:auto">退出并切换账号</a></div></div>
-<div class="setsec"><h2>☁ Cloudflare 状态</h2><p class="sub">Workers 负责接口与安全会话；D1 亚太数据库保存稿件和加密配置。</p><div class="chips"><span class="chip on"><span class="dot"></span>Worker 在线</span><span class="chip on"><span class="dot"></span>D1 APAC</span><span class="chip" id="regionChip">边缘节点检测中</span></div></div></section>
-</div></main></div>
-
-<div class="modalbg" id="editModal"><div class="modal"><h2>编辑稿件</h2><input type="hidden" id="editId"><label class="field">标题<input id="editTitle" maxlength="60"></label><label class="field">正文<textarea id="editBody"></textarea></label><div class="actions"><button class="btn primary" onclick="saveEdit()">保存并重新质检</button><button class="btn ghost" onclick="closeEdit()">取消</button></div></div></div><div class="toast" id="toast"></div>
-<script>
-const TRACKS={minsheng:['民生','养老金 · 社保 · 医保 · 房价 · 就业'],tiyu:['体育','足球 · 篮球 · 世界杯 · 奥运 · 国足'],yule:['娱乐','明星 · 电影 · 电视剧 · 综艺'],keji:['科技','AI · 芯片 · 手机 · 机器人 · 互联网'],caiqi:['财企','股市 · 公司 · 银行 · 财报 · 融资'],shishi:['时事','外交 · 政策 · 国际 · 通报'],jiankang:['健康','医院 · 医生 · 药物 · 养生'],lishi:['历史','古代 · 考古 · 文物 · 遗址'],meishi:['美食','菜谱 · 餐厅 · 食材 · 小吃']};
-let articles=[],generated=[],filter='all';const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function toast(s){const t=$('#toast');t.textContent=s;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2500)}
-async function api(path,opt={}){const r=await fetch('/api'+path,{...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});const d=await r.json();if(r.status===401){location.href=d.login||'/auth/login';throw new Error('请先登录')}if(!r.ok)throw new Error(d.error||`请求失败 ${r.status}`);return d}
-function show(v){$$('.view').forEach(x=>x.classList.toggle('on',x.id===v));$$('.navitem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));scrollTo({top:0});if(['review','library','publish'].includes(v))loadArticles();if(v==='settings')loadSettings()}
-$$('.navitem').forEach(x=>x.onclick=()=>show(x.dataset.v));
-function renderTracks(){ $('#trackChips').innerHTML=Object.values(TRACKS).map(v=>`<span class="chip on">${v[0]}</span>`).join('');$('#trackSettings').innerHTML=Object.values(TRACKS).map(v=>`<div class="keyrow"><label>${v[0]}</label><span class="muted">${v[1]}</span><span style="margin-left:auto;color:var(--ok)">已启用</span></div>`).join('') }
-async function loadMe(){try{const d=await api('/me'),u=d.user||{};['userAvatar','accountAvatar'].forEach(id=>$('#'+id).src=u.picture||'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>');$('#userName').textContent=u.name||'FlowX 用户';$('#userEmail').textContent=u.email||'';$('#accountName').textContent=u.name||'';$('#accountEmail').textContent=u.email||''}catch{}}
-async function loadHotspots(){const b=$('#fetchBtn');b.disabled=true;b.textContent='抓取中…';$('#hotspotBox').className='empty';$('#hotspotBox').textContent='正在连接百度与头条热榜…';try{const d=await api('/hotspots',{method:'POST',body:'{}'});let html='';for(const [key,g] of Object.entries(d.tracks||{})){html+=`<div class="trackhd"><span class="tk">${esc(g.name)}</span><span class="muted">${g.items.length} 条</span><span class="ln"></span></div>`+g.items.slice(0,15).map(i=>`<label class="topic"><input type="checkbox" data-track="${esc(key)}" data-title="${esc(i.title)}" data-source="${esc(i.source)}"><div><div class="ti">${esc(i.title)}</div><div class="meta">${esc(i.source)} ${i.hot?`<span class="heat">🔥 ${Number(i.hot).toLocaleString()}</span>`:''}</div></div></label>`).join('')}$('#hotspotBox').className='';$('#hotspotBox').innerHTML=html||'<div class="empty">暂时没有可归类热点</div>';$$('#hotspotBox input').forEach(x=>x.onchange=()=>{x.closest('.topic').classList.toggle('sel',x.checked);recount()});recount()}catch(e){$('#hotspotBox').innerHTML=`<div class="empty">${esc(e.message)}</div>`}finally{b.disabled=false;b.textContent='抓取今日热点 →'}}
-function recount(){const n=$$('#hotspotBox input:checked').length;$('#selN').textContent=`已选 ${n} 篇`}
-async function generateSelected(){const nodes=$$('#hotspotBox input:checked');if(!nodes.length)return toast('请先勾选选题');if(nodes.length>5)return toast('单次最多生成 5 篇');show('produce');$('#produceCards').innerHTML='<div class="empty">正在搜索素材、写作并质检，请稍候…</div>';$('#produceSummary').innerHTML=`<b>本轮 ${nodes.length} 篇</b><span class="muted">处理中</span>`;try{const d=await api('/generate',{method:'POST',body:JSON.stringify({items:nodes.map(n=>({title:n.dataset.title,track_key:n.dataset.track,source:n.dataset.source}))})});generated=d.results||[];const ok=generated.filter(x=>x.ok),fail=generated.length-ok.length;$('#produceSummary').innerHTML=`<b>本轮 ${generated.length} 篇</b><span style="color:var(--ok)">成功 ${ok.length}</span><span style="color:var(--stop)">失败 ${fail}</span>`;$('#produceCards').innerHTML=generated.map(x=>x.ok?cardHtml(x,'produce'):`<div class="panel"><b>${esc(x.title)}</b><div style="color:var(--stop)">${esc(x.error)}</div></div>`).join('');await loadArticles(false)}catch(e){$('#produceCards').innerHTML=`<div class="empty">${esc(e.message)}</div>`}}
-function qinfo(a){let p=a.qc_problems||[];if(typeof p==='string')try{p=JSON.parse(p)}catch{p=[]}return{p,cls:a.qc_level==='green'?'g':a.qc_level==='yellow'?'y':'r'}}
-function cardHtml(a,ctx){const q=qinfo(a),red=q.cls==='r'||a.status==='待修复';let acts='';if(['produce','review','library'].includes(ctx)){if(q.p.length)acts+=`<button class="btn tool sm" onclick="revise('${a.id}',this)">🔧 一键优化</button>`;acts+=`<button class="btn ghost sm" onclick="openEdit('${a.id}')">编辑</button>`}if(ctx==='library')acts+=a.status==='已发'?`<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`:`<button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">标记已发</button>`;if(ctx==='publish')acts=`<button class="btn primary sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">发布完成 · 归档</button>`;return `<article class="card${red?' red':''}"><div class="cov">${ctx==='publish'?'待发布稿件':'AI 内容稿件'}</div><div class="cardin"><div class="row1"><span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score??'—'}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status==='已发'?' yes':''}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')">${esc(a.body)}</div>${q.p.length?`<div class="probs${red?' bad':''}"><b>${red?'⛔ 拦截原因':'⚠ 质检发现的问题'}</b><br>${q.p.map(x=>'• '+esc(x)).join('<br>')}</div>`:''}<div class="actions">${acts}</div></div></article>`}
-async function loadArticles(render=true){try{articles=(await api('/articles')).articles||[];if(render){renderReview();renderLibrary();renderPublish()}}catch(e){toast(e.message)}}
-function renderReview(){const list=articles.filter(a=>a.status==='待修复'||qinfo(a).p.length);const dist={g:0,y:0,r:0};articles.forEach(a=>dist[qinfo(a).cls]++);$('#reviewSummary').innerHTML=`<b>全部 ${articles.length} 篇</b><span style="color:var(--ok)">绿 ${dist.g}</span><span style="color:var(--warn)">黄 ${dist.y}</span><span style="color:var(--stop)">红 ${dist.r}</span>`;$('#reviewCards').innerHTML=list.map(a=>cardHtml(a,'review')).join('')||'<div class="empty">当前没有需要处理的质检问题</div>'}
-function renderLibrary(){const counts={all:articles.length,'未发':0,'待修复':0,'已发':0};articles.forEach(a=>counts[a.status]=(counts[a.status]||0)+1);$$('#tabs .tab').forEach(t=>t.querySelector('.cnt').textContent=counts[t.dataset.filter]||0);const list=filter==='all'?articles:articles.filter(a=>a.status===filter);$('#libraryCards').innerHTML=list.map(a=>cardHtml(a,'library')).join('')||'<div class="empty">当前分类没有稿件</div>'}
-function renderPublish(){const list=articles.filter(a=>a.status==='未发'&&a.qc_level!=='red');$('#publishCards').innerHTML=list.map(a=>cardHtml(a,'publish')).join('')||'<div class="empty">暂无可发布稿件；红档会被质量闸拦截</div>'}
-$$('#tabs .tab').forEach(t=>t.onclick=()=>{$$('#tabs .tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');filter=t.dataset.filter;renderLibrary()});
-async function revise(id,b){b.disabled=true;b.textContent='优化中…';try{await api('/revise',{method:'POST',body:JSON.stringify({id})});toast('优化完成并已重新质检');loadArticles()}catch(e){toast(e.message)}finally{b.disabled=false;b.textContent='🔧 一键优化'}}
-function openEdit(id){const a=articles.find(x=>x.id===id)||generated.find(x=>x.id===id);if(!a)return;$('#editId').value=id;$('#editTitle').value=a.title;$('#editBody').value=a.body;$('#editModal').classList.add('on')}function closeEdit(){$('#editModal').classList.remove('on')}async function saveEdit(){try{await api('/articles/'+$('#editId').value,{method:'PUT',body:JSON.stringify({title:$('#editTitle').value,body:$('#editBody').value})});closeEdit();toast('已保存并重新质检');loadArticles()}catch(e){toast(e.message)}}
-async function setStatus(id,status){try{await api(`/articles/${id}/status`,{method:'POST',body:JSON.stringify({status})});toast(`已标记为${status}`);loadArticles()}catch(e){toast(e.message)}}function copyText(id,field){const a=articles.find(x=>x.id===id);if(!a)return;navigator.clipboard.writeText(a[field]).then(()=>toast(field==='title'?'标题已复制':'正文已复制'))}
-async function loadSettings(){try{const [s,h]=await Promise.all([api('/settings'),api('/health')]);$('#deepseekStatus').textContent=s.keys.deepseek?'✓ 当前账号已配置':'当前账号未配置';$('#tavilyStatus').textContent=s.keys.tavily?'✓ 当前账号已配置':'当前账号未配置';$('#regionChip').textContent=`当前边缘节点 ${h.region}`}catch(e){toast(e.message)}}async function saveKeys(){try{await api('/settings/keys',{method:'POST',body:JSON.stringify({deepseek:$('#deepseekKey').value,tavily:$('#tavilyKey').value})});$('#deepseekKey').value='';$('#tavilyKey').value='';toast('API Key 已绑定并加密保存到当前账号');loadSettings()}catch(e){toast(e.message)}}
-renderTracks();loadMe();loadArticles(false);
-</script></body></html>
+    <div class="modalbg" id="editModal">
+      <div class="modal">
+        <h2>编辑稿件</h2>
+        <input type="hidden" id="editId" /><label class="field"
+          >标题<input id="editTitle" maxlength="60" /></label
+        ><label class="field">正文<textarea id="editBody"></textarea></label>
+        <div class="actions">
+          <button class="btn primary" onclick="saveEdit()">
+            保存并重新质检</button
+          ><button class="btn ghost" onclick="closeEdit()">取消</button>
+        </div>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script>
+      const TRACKS = {
+        minsheng: ["民生", "养老金 · 社保 · 医保 · 房价 · 就业"],
+        tiyu: ["体育", "足球 · 篮球 · 世界杯 · 奥运 · 国足"],
+        yule: ["娱乐", "明星 · 电影 · 电视剧 · 综艺"],
+        keji: ["科技", "AI · 芯片 · 手机 · 机器人 · 互联网"],
+        caiqi: ["财企", "股市 · 公司 · 银行 · 财报 · 融资"],
+        shishi: ["时事", "外交 · 政策 · 国际 · 通报"],
+        jiankang: ["健康", "医院 · 医生 · 药物 · 养生"],
+        lishi: ["历史", "古代 · 考古 · 文物 · 遗址"],
+        meishi: ["美食", "菜谱 · 餐厅 · 食材 · 小吃"],
+      };
+      let articles = [],
+        generated = [],
+        filter = "all";
+      let appSettings = {
+        keys: {},
+        hotspot: { sources: [], all_sources: [], base_url: "" },
+        tracks: [],
+      };
+      const $ = (s) => document.querySelector(s),
+        $$ = (s) => [...document.querySelectorAll(s)];
+      function esc(v) {
+        return String(v ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      }
+      function toast(s) {
+        const t = $("#toast");
+        t.textContent = s;
+        t.classList.add("on");
+        setTimeout(() => t.classList.remove("on"), 2500);
+      }
+      async function api(path, opt = {}) {
+        const r = await fetch("/api" + path, {
+          ...opt,
+          headers: {
+            "content-type": "application/json",
+            ...(opt.headers || {}),
+          },
+        });
+        const d = await r.json();
+        if (r.status === 401) {
+          location.href = d.login || "/auth/login";
+          throw new Error("请先登录");
+        }
+        if (!r.ok) throw new Error(d.error || `请求失败 ${r.status}`);
+        return d;
+      }
+      function show(v) {
+        const navView =
+          v === "review" ? "produce" : v === "publish" ? "library" : v;
+        $$(".view").forEach((x) => x.classList.toggle("on", x.id === v));
+        $$(".navitem").forEach((x) =>
+          x.classList.toggle("on", x.dataset.v === navView),
+        );
+        scrollTo({ top: 0 });
+        if (["review", "library", "publish"].includes(v)) loadArticles();
+        if (v === "settings") loadSettings();
+      }
+      $$(".navitem").forEach((x) => (x.onclick = () => show(x.dataset.v)));
+      function renderTracks() {
+        const settings = appSettings.tracks.length
+          ? appSettings.tracks
+          : Object.entries(TRACKS).map(([key, value]) => ({
+              key,
+              name: value[0],
+              keywords: value[1].split(" · "),
+              enabled: true,
+            }));
+        $("#trackChips").innerHTML = settings
+          .map(
+            (v) =>
+              `<button class="chip${v.enabled ? " on" : ""}" onclick="toggleTrack('${v.key}')">${esc(v.name)}</button>`,
+          )
+          .join("");
+        $("#trackSettings").innerHTML = settings
+          .map(
+            (v) =>
+              `<div class="keyrow"><label>${esc(v.name)}</label><span class="muted">${esc((v.keywords || []).join(" · "))}</span><button class="chip${v.enabled ? " on" : ""}" style="margin-left:auto" onclick="toggleTrack('${v.key}')">${v.enabled ? "已启用" : "已停用"}</button></div>`,
+          )
+          .join("");
+      }
+      function renderSources(status = []) {
+        const enabled = new Set(appSettings.hotspot.sources || []);
+        const statuses = new Map(status.map((s) => [s.code, s]));
+        const html = (appSettings.hotspot.all_sources || [])
+          .map((s) => {
+            const live = statuses.get(s.code);
+            const extra = live
+              ? ` · ${live.ok ? live.count + "条" : "异常"}`
+              : "";
+            return `<button class="chip${enabled.has(s.code) ? " on" : ""}${live && !live.ok ? " bad" : ""}" onclick="toggleSource('${s.code}')"><span class="dot"></span>${esc(s.name)}${extra}${s.direct ? " · 直抓" : ""}</button>`;
+          })
+          .join("");
+        $("#sourceChips").innerHTML = html;
+        $("#settingsSourceChips").innerHTML = html;
+        $("#sourceSummary").textContent = status.length
+          ? `${status.filter((s) => s.ok).length}/${status.length} 个来源在线`
+          : `${enabled.size} 个来源已启用`;
+      }
+      function toggleSource(code) {
+        const sources = new Set(appSettings.hotspot.sources || []);
+        sources.has(code) ? sources.delete(code) : sources.add(code);
+        if (!sources.size) return toast("至少保留一个热点来源");
+        appSettings.hotspot.sources = [...sources];
+        renderSources();
+        savePreferences(true);
+      }
+      function toggleTrack(code) {
+        const item = appSettings.tracks.find((t) => t.key === code);
+        if (!item) return;
+        const count = appSettings.tracks.filter((t) => t.enabled).length;
+        if (item.enabled && count === 1) return toast("至少保留一个赛道");
+        item.enabled = !item.enabled;
+        renderTracks();
+        savePreferences(true);
+      }
+      async function loadMe() {
+        try {
+          const d = await api("/me"),
+            u = d.user || {};
+          ["userAvatar", "accountAvatar"].forEach(
+            (id) =>
+              ($("#" + id).src =
+                u.picture ||
+                'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'),
+          );
+          $("#userName").textContent = u.name || "FlowX 用户";
+          $("#userEmail").textContent = u.email || "";
+          $("#accountName").textContent = u.name || "";
+          $("#accountEmail").textContent = u.email || "";
+        } catch {}
+      }
+      async function loadHotspots() {
+        const b = $("#fetchBtn");
+        b.disabled = true;
+        b.textContent = "抓取中…";
+        $("#hotspotBox").className = "empty";
+        $("#hotspotBox").textContent = "正在并行连接已启用的热点来源…";
+        try {
+          const d = await api("/hotspots", { method: "POST", body: "{}" });
+          renderSources(d.sources || []);
+          let html = "";
+          for (const [key, g] of Object.entries(d.tracks || {})) {
+            html +=
+              `<div class="trackhd"><span class="tk">${esc(g.name)}</span><span class="muted">${g.items.length} 条</span><span class="ln"></span></div>` +
+              g.items
+                .slice(0, 15)
+                .map(
+                  (i) =>
+                    `<label class="topic"><input type="checkbox" data-track="${esc(key)}" data-title="${esc(i.title)}" data-source="${esc(i.source)}"><div><div class="ti">${esc(i.title)}</div><div class="meta">${esc(i.source)} ${i.hot ? `<span class="heat">🔥 ${Number(i.hot).toLocaleString()}</span>` : ""}</div></div></label>`,
+                )
+                .join("");
+          }
+          $("#hotspotBox").className = "";
+          $("#hotspotBox").innerHTML =
+            html || '<div class="empty">暂时没有可归类热点</div>';
+          $$("#hotspotBox input").forEach(
+            (x) =>
+              (x.onchange = () => {
+                x.closest(".topic").classList.toggle("sel", x.checked);
+                recount();
+              }),
+          );
+          recount();
+        } catch (e) {
+          $("#hotspotBox").innerHTML =
+            `<div class="empty">${esc(e.message)}</div>`;
+        } finally {
+          b.disabled = false;
+          b.textContent = "抓取今日热点 →";
+        }
+      }
+      function recount() {
+        const n = $$("#hotspotBox input:checked").length;
+        $("#selN").textContent = `已选 ${n} 篇`;
+      }
+      async function generateSelected() {
+        const nodes = $$("#hotspotBox input:checked");
+        if (!nodes.length) return toast("请先勾选选题");
+        if (nodes.length > 5) return toast("单次最多生成 5 篇");
+        show("produce");
+        $("#produceCards").innerHTML =
+          '<div class="empty">正在搜索素材、写作并质检，请稍候…</div>';
+        $("#produceSummary").innerHTML =
+          `<b>本轮 ${nodes.length} 篇</b><span class="muted">处理中</span>`;
+        try {
+          const d = await api("/generate", {
+            method: "POST",
+            body: JSON.stringify({
+              items: nodes.map((n) => ({
+                title: n.dataset.title,
+                track_key: n.dataset.track,
+                source: n.dataset.source,
+              })),
+            }),
+          });
+          generated = d.results || [];
+          const ok = generated.filter((x) => x.ok),
+            fail = generated.length - ok.length;
+          $("#produceSummary").innerHTML =
+            `<b>本轮 ${generated.length} 篇</b><span style="color:var(--ok)">成功 ${ok.length}</span><span style="color:var(--stop)">失败 ${fail}</span>`;
+          $("#produceCards").innerHTML = generated
+            .map((x) =>
+              x.ok
+                ? cardHtml(x, "produce")
+                : `<div class="panel"><b>${esc(x.title)}</b><div style="color:var(--stop)">${esc(x.error)}</div></div>`,
+            )
+            .join("");
+          await loadArticles(false);
+        } catch (e) {
+          $("#produceCards").innerHTML =
+            `<div class="empty">${esc(e.message)}</div>`;
+        }
+      }
+      function qinfo(a) {
+        let p = a.qc_problems || [];
+        if (typeof p === "string")
+          try {
+            p = JSON.parse(p);
+          } catch {
+            p = [];
+          }
+        return {
+          p,
+          cls:
+            a.qc_level === "green" ? "g" : a.qc_level === "yellow" ? "y" : "r",
+        };
+      }
+      function cardHtml(a, ctx) {
+        const q = qinfo(a),
+          red = q.cls === "r" || a.status === "待修复";
+        const cover = a.cover_url
+          ? ` style="background-image:url('${esc(a.cover_url)}')"`
+          : "";
+        let acts = "";
+        if (["produce", "review", "library"].includes(ctx)) {
+          if (q.p.length)
+            acts += `<button class="btn tool sm" onclick="revise('${a.id}',this)">🔧 一键优化</button>`;
+          acts += `<button class="btn ghost sm" onclick="openEdit('${a.id}')">编辑</button>`;
+        }
+        if (ctx === "library")
+          acts +=
+            a.status === "已发"
+              ? `<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`
+              : `<button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">标记已发</button>`;
+        if (ctx === "publish")
+          acts = `<button class="btn primary sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">发布完成 · 归档</button>`;
+        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : ctx === "publish" ? "待发布稿件" : "AI 内容稿件"}</div><div class="cardin"><div class="row1"><span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')">${esc(a.body)}</div>${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}<div class="actions">${acts}</div></div></article>`;
+      }
+      async function loadArticles(render = true) {
+        try {
+          articles = (await api("/articles")).articles || [];
+          if (render) {
+            renderReview();
+            renderLibrary();
+            renderPublish();
+          }
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+      function renderReview() {
+        const list = articles.filter(
+          (a) => a.status === "待修复" || qinfo(a).p.length,
+        );
+        const dist = { g: 0, y: 0, r: 0 };
+        articles.forEach((a) => dist[qinfo(a).cls]++);
+        $("#reviewSummary").innerHTML =
+          `<b>全部 ${articles.length} 篇</b><span style="color:var(--ok)">绿 ${dist.g}</span><span style="color:var(--warn)">黄 ${dist.y}</span><span style="color:var(--stop)">红 ${dist.r}</span>`;
+        $("#reviewCards").innerHTML =
+          list.map((a) => cardHtml(a, "review")).join("") ||
+          '<div class="empty">当前没有需要处理的质检问题</div>';
+      }
+      function renderLibrary() {
+        const counts = { all: articles.length, 未发: 0, 待修复: 0, 已发: 0 };
+        articles.forEach(
+          (a) => (counts[a.status] = (counts[a.status] || 0) + 1),
+        );
+        $$("#tabs .tab").forEach(
+          (t) =>
+            (t.querySelector(".cnt").textContent =
+              counts[t.dataset.filter] || 0),
+        );
+        const list =
+          filter === "all"
+            ? articles
+            : articles.filter((a) => a.status === filter);
+        $("#libraryCards").innerHTML =
+          list.map((a) => cardHtml(a, "library")).join("") ||
+          '<div class="empty">当前分类没有稿件</div>';
+      }
+      function renderPublish() {
+        const list = articles.filter(
+          (a) => a.status === "未发" && a.qc_level !== "red",
+        );
+        $("#publishCards").innerHTML =
+          list.map((a) => cardHtml(a, "publish")).join("") ||
+          '<div class="empty">暂无可发布稿件；红档会被质量闸拦截</div>';
+      }
+      $$("#tabs .tab").forEach(
+        (t) =>
+          (t.onclick = () => {
+            $$("#tabs .tab").forEach((x) => x.classList.remove("on"));
+            t.classList.add("on");
+            filter = t.dataset.filter;
+            renderLibrary();
+          }),
+      );
+      async function revise(id, b) {
+        b.disabled = true;
+        b.textContent = "优化中…";
+        try {
+          await api("/revise", {
+            method: "POST",
+            body: JSON.stringify({ id }),
+          });
+          toast("优化完成并已重新质检");
+          loadArticles();
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          b.disabled = false;
+          b.textContent = "🔧 一键优化";
+        }
+      }
+      function openEdit(id) {
+        const a =
+          articles.find((x) => x.id === id) ||
+          generated.find((x) => x.id === id);
+        if (!a) return;
+        $("#editId").value = id;
+        $("#editTitle").value = a.title;
+        $("#editBody").value = a.body;
+        $("#editModal").classList.add("on");
+      }
+      function closeEdit() {
+        $("#editModal").classList.remove("on");
+      }
+      async function saveEdit() {
+        try {
+          await api("/articles/" + $("#editId").value, {
+            method: "PUT",
+            body: JSON.stringify({
+              title: $("#editTitle").value,
+              body: $("#editBody").value,
+            }),
+          });
+          closeEdit();
+          toast("已保存并重新质检");
+          loadArticles();
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+      async function setStatus(id, status) {
+        try {
+          await api(`/articles/${id}/status`, {
+            method: "POST",
+            body: JSON.stringify({ status }),
+          });
+          toast(`已标记为${status}`);
+          loadArticles();
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+      function copyText(id, field) {
+        const a = articles.find((x) => x.id === id);
+        if (!a) return;
+        navigator.clipboard
+          .writeText(a[field])
+          .then(() => toast(field === "title" ? "标题已复制" : "正文已复制"));
+      }
+      async function loadSettings() {
+        try {
+          const [s, h] = await Promise.all([api("/settings"), api("/health")]);
+          appSettings = s;
+          for (const key of ["deepseek", "tavily", "bocha", "pexels"]) {
+            $("#" + key + "Status").textContent = s.keys[key]
+              ? "✓ 当前账号已配置"
+              : "当前账号未配置";
+          }
+          $("#dailyhotBase").value = s.hotspot.base_url || "";
+          renderSources();
+          renderTracks();
+          $("#regionChip").textContent = `当前边缘节点 ${h.region}`;
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+      async function saveKeys() {
+        try {
+          await api("/settings/keys", {
+            method: "POST",
+            body: JSON.stringify({
+              deepseek: $("#deepseekKey").value,
+              tavily: $("#tavilyKey").value,
+              bocha: $("#bochaKey").value,
+              pexels: $("#pexelsKey").value,
+            }),
+          });
+          for (const key of ["deepseek", "tavily", "bocha", "pexels"])
+            $("#" + key + "Key").value = "";
+          toast("API Key 已绑定并加密保存到当前账号");
+          loadSettings();
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+      async function savePreferences(quiet = false) {
+        try {
+          await api("/settings/preferences", {
+            method: "POST",
+            body: JSON.stringify({
+              sources: appSettings.hotspot.sources,
+              tracks: appSettings.tracks
+                .filter((track) => track.enabled)
+                .map((track) => track.key),
+              base_url: $("#dailyhotBase").value.trim(),
+            }),
+          });
+          if (!quiet) toast("热点来源与赛道已保存到当前账号");
+          if (!quiet) loadSettings();
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+      renderTracks();
+      loadSettings();
+      loadMe();
+      loadArticles(false);
+    </script>
+  </body>
+</html>

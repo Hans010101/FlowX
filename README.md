@@ -9,15 +9,15 @@ FlowX 是一套面向中文内容团队的本地优先 AI 内容工作流：抓�
 - 云端工作台：<https://flowx-app.hans-pan007.workers.dev>
 - 产品介绍站：<https://flowx-2hv.pages.dev>
 
-云端工作台运行在 Cloudflare Workers + D1，按「选题、生产、审核、稿库、发布、设置」组织完整工作流。首次访问使用获准的 Google 账号登录；登录会话在同一浏览器中保留 30 天。登录后可在“设置”中配置自己的 DeepSeek 与 Tavily Key。
+云端工作台运行在 Cloudflare Workers + D1，按「选题、生产·审核、稿库·发布、设置」组织完整工作流。首次访问使用获准的 Google 账号登录；登录会话在同一浏览器中保留 30 天。登录后可按账号配置 DeepSeek、Tavily、博查、Pexels Key、热点来源与赛道。
 
 ## 为什么是“本地优先”
 
-FlowX 的发布能力依赖本机浏览器中的 Wechatsync 扩展和各平台登录态。API Key、Cookie 与平台会话留在用户设备上；这也意味着当前完整版本不能原样运行在 Cloudflare Pages/Workers 等纯无服务器环境。Cloudflare 可承载公开产品站，核心工作台仍应在本机或常驻桌面主机运行。
+FlowX 的云端版已经覆盖选题、检索、写稿、配图、质检、稿库和复制归档。自动同步到第三方平台草稿箱仍依赖本机浏览器中的 Wechatsync 扩展与平台登录态，因此这部分继续由本地版承担。
 
 ## 已有能力
 
-- 百度、头条直抓；抖音、微博、知乎、B 站、36 氪、澎湃等通过 DailyHotApi 聚合
+- 百度、头条、抖音、微博、知乎、B 站、36 氪、澎湃由 Worker 优先直抓，并以可配置的 DailyHotApi 作为回退
 - 9 个内容赛道，可配置开关、关键词、写作提示词与展示顺序
 - 多关键词加权归类、跨平台话题合并、6 小时选题去重
 - Tavily → 博查素材检索回退链
