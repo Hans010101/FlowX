@@ -4,6 +4,13 @@ FlowX 是一套面向中文内容团队的本地优先 AI 内容工作流：抓�
 
 > 抓热点 → AI 写稿 → 配图 → 质检 → 定向优化 → 稿库 → 平台草稿箱 → 人工发布
 
+## 在线使用
+
+- 云端工作台：<https://flowx-app.hans-pan007.workers.dev>
+- 产品介绍站：<https://flowx-2hv.pages.dev>
+
+云端工作台运行在 Cloudflare Workers + D1，支持热点抓取、AI 生成、质检、稿库、编辑与状态管理。首次访问需要维护者提供的登录密码，登录后在“API 设置”中配置自己的 DeepSeek 与 Tavily Key。
+
 ## 为什么是“本地优先”
 
 FlowX 的发布能力依赖本机浏览器中的 Wechatsync 扩展和各平台登录态。API Key、Cookie 与平台会话留在用户设备上；这也意味着当前完整版本不能原样运行在 Cloudflare Pages/Workers 等纯无服务器环境。Cloudflare 可承载公开产品站，核心工作台仍应在本机或常驻桌面主机运行。
@@ -62,6 +69,7 @@ quality/            规则与 AI 质检
 store/              SQLite 稿库和选题去重
 publishers/         已冻结的 Playwright 兜底发布器
 cloudflare-site/    可部署到 Cloudflare Pages 的公开产品站
+cloudflare-app/     Workers + D1 云端工作台
 tests/              不依赖外部 API 的核心回归测试
 ```
 

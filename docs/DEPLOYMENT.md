@@ -21,8 +21,22 @@ npx wrangler pages deploy cloudflare-site --project-name flowx
 
 Cloudflare 的边缘网络会自动选择离访问者较近的节点，不提供“固定选择亚洲服务器”的选项；亚洲用户通常会由亚洲 PoP 响应。
 
+## Cloudflare Workers 云端工作台
+
+`cloudflare-app/` 是为免费层重构的可操作版本，使用 Workers Static Assets + D1：
+
+```bash
+npx wrangler d1 create flowx-cloud-db
+npx wrangler d1 execute flowx-cloud-db --remote --file cloudflare-app/schema.sql
+npx wrangler secret put FLOWX_PASSWORD --config cloudflare-app/wrangler.jsonc
+npx wrangler secret put CONFIG_KEY --config cloudflare-app/wrangler.jsonc
+npx wrangler deploy --config cloudflare-app/wrangler.jsonc
+```
+
+当前实例：<https://flowx-app.hans-pan007.workers.dev>。整个站点使用 HTTP Basic Authentication 保护；API Key 在 Worker 内以 AES-GCM 加密后写入 D1，仓库和前端只保存“是否已配置”。
+
 ## 为什么不把 FastAPI 原样放进 Workers
 
-当前后端使用 SQLite、本地文件、后台调度线程和 `subprocess`，发布环节还要求浏览器扩展登录态。这些能力不属于 Cloudflare Pages/Workers 的运行模型。强行迁移会让定时任务、稿库和发布链路中的至少一部分失效。
+原始后端使用 SQLite、本地文件、后台调度线程和 `subprocess`，发布环节还要求浏览器扩展登录态。这些能力不属于 Cloudflare Pages/Workers 的运行模型。因此云端版改用 D1、Web Crypto 和 Worker `fetch`，并明确移除依赖本机浏览器的发布链路。
 
 若未来要实现真正云端版，应拆分为：Cloudflare 前端与鉴权、云数据库/对象存储、队列化任务执行器，以及运行在用户设备上的“发布代理”。
