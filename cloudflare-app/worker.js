@@ -659,6 +659,31 @@ async function fetchDailyHotSource(baseUrl, source) {
     .filter((row) => row.title);
 }
 
+function normalizeTopicTitle(title) {
+  return String(title || "")
+    .replace(/[\s，。！？、：“”‘’《》()（）【】\-]/g, "")
+    .toLowerCase();
+}
+
+async function hideTopics(env, email, titles, reason = "manual") {
+  const rows = [...new Set((titles || []).map(String).map((title) => title.trim()))]
+    .map((title) => ({ title, key: normalizeTopicTitle(title) }))
+    .filter((row) => row.key)
+    .slice(0, 100);
+  if (!rows.length) return 0;
+  await env.DB.batch(
+    rows.map((row) =>
+      env.DB.prepare(
+        `INSERT INTO user_hidden_topics(owner_email,topic_key,title,reason,hidden_at)
+         VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+         ON CONFLICT(owner_email,topic_key) DO UPDATE SET
+           title=excluded.title,reason=excluded.reason,hidden_at=CURRENT_TIMESTAMP`,
+      ).bind(email, row.key, row.title, reason),
+    ),
+  );
+  return rows.length;
+}
+
 async function fetchHotspots(env, email) {
   let enabledSources = DEFAULT_HOT_SOURCES;
   let enabledTracks = Object.keys(TRACKS);
@@ -703,13 +728,17 @@ async function fetchHotspots(env, email) {
     }),
   );
   const items = settled.flatMap((result) => result.items);
+  const hiddenRows = await env.DB.prepare(
+    "SELECT topic_key FROM user_hidden_topics WHERE owner_email=?",
+  )
+    .bind(email)
+    .all();
+  const hidden = new Set((hiddenRows.results || []).map((row) => row.topic_key));
   const seen = new Set();
   const tracks = {};
   for (const item of items) {
-    const normalized = item.title
-      .replace(/[\s，。！？、：“”‘’《》()（）【】\-]/g, "")
-      .toLowerCase();
-    if (!normalized || seen.has(normalized)) continue;
+    const normalized = normalizeTopicTitle(item.title);
+    if (!normalized || hidden.has(normalized) || seen.has(normalized)) continue;
     seen.add(normalized);
     const hit = classify(item.title);
     if (!hit || !enabledTracks.includes(hit.key)) continue;
@@ -830,7 +859,7 @@ async function pexelsCover(article, pexelsKey, deepseekKey, page = 1) {
     });
     if (!response.ok) return "";
     const photo = (await response.json())?.photos?.[0];
-    return photo?.src?.large2x || photo?.src?.large || "";
+    return photo?.src?.large || photo?.src?.medium || photo?.src?.large2x || "";
   } catch {
     return "";
   }
@@ -1196,9 +1225,16 @@ async function handleApi(request, env, user) {
   }
   if (path === "/api/hotspots" && request.method === "POST")
     return json(await fetchHotspots(env, email));
+  if (path === "/api/hotspots/hide" && request.method === "POST") {
+    const body = await request.json();
+    const titles = Array.isArray(body.titles) ? body.titles : [];
+    if (!titles.length) return json({ error: "请选择需要删除的热点" }, 400);
+    const hidden = await hideTopics(env, email, titles, "manual");
+    return json({ ok: true, hidden });
+  }
   if (path === "/api/generate" && request.method === "POST") {
     const body = await request.json();
-    const items = Array.isArray(body.items) ? body.items.slice(0, 5) : [];
+    const items = Array.isArray(body.items) ? body.items.slice(0, 20) : [];
     if (!items.length) return json({ error: "至少选择一个选题" }, 400);
     const deepseekTest = await validateApiKey(
       "deepseek",
@@ -1209,14 +1245,31 @@ async function handleApi(request, env, user) {
         { error: `DeepSeek：${deepseekTest.message}，请先在设置中更换 Key` },
         400,
       );
-    const results = [];
-    for (const item of items) {
-      try {
-        results.push({ ok: true, ...(await generateOne(item, env, email)) });
-      } catch (error) {
-        results.push({ ok: false, title: item.title, error: error.message });
-      }
-    }
+    const results = new Array(items.length);
+    let cursor = 0;
+    const workerCount = Math.min(4, items.length);
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const index = cursor++;
+          if (index >= items.length) return;
+          const item = items[index];
+          try {
+            results[index] = {
+              ok: true,
+              ...(await generateOne(item, env, email)),
+            };
+            await hideTopics(env, email, [item.title], "generated");
+          } catch (error) {
+            results[index] = {
+              ok: false,
+              title: item.title,
+              error: error.message,
+            };
+          }
+        }
+      }),
+    );
     return json({ results });
   }
   if (path === "/api/articles" && request.method === "GET") {
@@ -1295,7 +1348,16 @@ async function handleApi(request, env, user) {
   }
   if (path === "/api/publish-jobs" && request.method === "POST") {
     const body = await request.json();
-    const articleId = String(body.article_id || "").trim();
+    const articleIds = [
+      ...new Set(
+        (Array.isArray(body.article_ids)
+          ? body.article_ids
+          : [body.article_id]
+        )
+          .map((id) => String(id || "").trim())
+          .filter((id) => /^[a-f0-9]+$/.test(id)),
+      ),
+    ].slice(0, 20);
     const allowedPlatforms = new Set(["toutiao", "baijiahao", "zhihu"]);
     const platforms = [
       ...new Set(
@@ -1304,33 +1366,58 @@ async function handleApi(request, env, user) {
           .filter((platform) => allowedPlatforms.has(platform)),
       ),
     ];
-    if (!/^[a-f0-9]+$/.test(articleId) || !platforms.length)
+    if (!articleIds.length || !platforms.length)
       return json({ error: "请选择有效稿件和发布平台" }, 400);
-    const article = await env.DB.prepare(
-      "SELECT id,status,qc_level FROM user_articles WHERE owner_email=? AND id=?",
+    const placeholders = articleIds.map(() => "?").join(",");
+    const articleRows = await env.DB.prepare(
+      `SELECT id,status,qc_level FROM user_articles WHERE owner_email=? AND id IN (${placeholders})`,
     )
-      .bind(email, articleId)
-      .first();
-    if (!article) return json({ error: "稿件不存在" }, 404);
-    if (article.status === "待修复" || article.qc_level === "red")
+      .bind(email, ...articleIds)
+      .all();
+    const validArticles = articleRows.results || [];
+    if (validArticles.length !== articleIds.length)
+      return json({ error: "部分稿件不存在，请刷新后重试" }, 404);
+    if (
+      validArticles.some(
+        (article) => article.status === "待修复" || article.qc_level === "red",
+      )
+    )
       return json({ error: "红档稿件不能进入发布队列" }, 400);
-    const jobs = platforms.map((platform) => ({
-      id: crypto.randomUUID(),
-      article_id: articleId,
-      platform,
-      status: "queued",
-      attempts: 0,
-      error: "",
-      draft_link: "",
-    }));
-    await env.DB.batch(
-      jobs.map((job) =>
-        env.DB.prepare(
-          "INSERT INTO user_publish_jobs(owner_email,id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at) VALUES(?,?,?,?,?,0,'','',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
-        ).bind(email, job.id, job.article_id, job.platform, job.status),
-      ),
+    const queueStartedAt = Date.now();
+    const jobs = articleIds.flatMap((articleId, articleIndex) =>
+      platforms.map((platform) => ({
+        id: crypto.randomUUID(),
+        article_id: articleId,
+        platform,
+        status: "queued",
+        attempts: 0,
+        error: "",
+        draft_link: "",
+        created_at: new Date(queueStartedAt + articleIndex).toISOString(),
+      })),
     );
-    return json({ ok: true, jobs });
+    await env.DB.batch(
+      [
+        ...jobs.map((job) =>
+          env.DB.prepare(
+            "INSERT INTO user_publish_jobs(owner_email,id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at) VALUES(?,?,?,?,?,0,'','',?,CURRENT_TIMESTAMP)",
+          ).bind(
+            email,
+            job.id,
+            job.article_id,
+            job.platform,
+            job.status,
+            job.created_at,
+          ),
+        ),
+        ...articleIds.map((articleId) =>
+          env.DB.prepare(
+            "UPDATE user_articles SET status='已发',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
+          ).bind(email, articleId),
+        ),
+      ],
+    );
+    return json({ ok: true, jobs, article_ids: articleIds });
   }
   const publishJobMatch = path.match(
     /^\/api\/publish-jobs\/([0-9a-f-]+)(?:\/(retry))?$/,

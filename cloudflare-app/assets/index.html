@@ -516,9 +516,40 @@
         color: var(--ink-soft);
         max-height: 4.9em;
         overflow: hidden;
+        cursor: pointer;
       }
       .body.full {
         max-height: none;
+      }
+      .body-copy {
+        display: none;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line-soft);
+      }
+      .body.full + .body-copy {
+        display: flex;
+      }
+      .article-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--ink-soft);
+        font-weight: 700;
+      }
+      .article-select input {
+        width: 17px;
+        height: 17px;
+        accent-color: var(--brand);
+      }
+      .library-batch {
+        z-index: 5;
+      }
+      .library-batch[hidden] {
+        display: none;
       }
       .probs {
         margin-top: 12px;
@@ -973,10 +1004,15 @@
             </div>
             <div id="hotspotBox" class="empty">点击“抓取今日热点”开始</div>
             <div class="selbar">
-              <b id="selN">已选 0 篇</b
-              ><button class="btn" onclick="generateSelected()">
-                开始生成 →
-              </button>
+              <b id="selN">已选 0 / 20 篇</b>
+              <div class="actions" style="margin:0">
+                <button class="btn ghost" onclick="deleteSelectedTopics()">
+                  删除选题
+                </button>
+                <button class="btn" onclick="generateSelected()">
+                  开始生成 →
+                </button>
+              </div>
             </div>
           </section>
 
@@ -1025,18 +1061,35 @@
           <section class="view" id="library">
             <div class="viewhead">
               <div>
-                <p class="eyebrow">Step 03 · Library</p>
-                <h1>稿库</h1>
-                <p>管理全部稿件、状态与历史内容</p>
+                <p class="eyebrow">Step 03 · Library & Publish</p>
+                <h1>稿库与发布</h1>
+                <p>统一管理稿件、封面、发布平台与自动发布任务</p>
               </div>
               <div class="actions">
                 <button class="btn ghost" onclick="loadArticles()">
                   ↻ 刷新
                 </button>
-                <button class="btn ghost" onclick="show('publish')">
-                  进入发布 →
-                </button>
               </div>
+            </div>
+            <div class="panel">
+              <div class="phead">
+                <div class="t"><span class="barmark"></span>统一发布平台</div>
+                <button class="btn ghost sm" onclick="refreshPublishConnections(true)">↻ 检测登录状态</button>
+              </div>
+              <div class="muted" id="publishBridgeStatus">正在检测文章同步助手扩展…</div>
+              <div class="publish-connect" id="publishConnections"></div>
+              <div class="muted" style="margin-top:12px">
+                此处勾选的平台将统一应用于每篇稿件和批量发布。平台登录态只保存在当前浏览器，同步成功后先进入草稿箱。
+                <a href="https://chrome.google.com/webstore/detail/%E5%BE%AE%E4%BF%A1%E5%90%8C%E6%AD%A5%E5%8A%A9%E6%89%8B/hchobocdmclopcbnibdnoafilagadion" target="_blank" rel="noreferrer" style="color:var(--brand)">安装文章同步助手</a>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="phead">
+                <div class="t"><span class="barmark"></span>自动发布任务</div>
+                <button class="btn ghost sm" onclick="resumePublishQueue(true)">▶ 继续待处理任务</button>
+              </div>
+              <div class="chips" id="publishJobSummary"></div>
+              <div class="job-list" id="publishJobList" style="margin-top:10px"></div>
             </div>
             <div class="tabs" id="tabs">
               <button class="tab on" data-filter="all">
@@ -1050,40 +1103,10 @@
               </button>
             </div>
             <div class="cards" id="libraryCards"></div>
-          </section>
-
-          <section class="view" id="publish">
-            <div class="viewhead">
-              <div>
-                <p class="eyebrow">Step 03 · Publish</p>
-                <h1>发布</h1>
-                <p>一次同步到今日头条、百家号与知乎草稿箱</p>
-              </div>
-              <button class="btn ghost" onclick="show('library')">
-                ← 返回稿库
-              </button>
+            <div class="selbar library-batch" id="libraryBatchBar" hidden>
+              <b id="batchN">已选 0 篇</b>
+              <button class="btn" onclick="batchPublishSelected()">批量发布 →</button>
             </div>
-            <div class="panel">
-              <div class="phead">
-                <div class="t"><span class="barmark"></span>三平台连接</div>
-                <button class="btn ghost sm" onclick="refreshPublishConnections(true)">↻ 检测登录状态</button>
-              </div>
-              <div class="muted" id="publishBridgeStatus">正在检测文章同步助手扩展…</div>
-              <div class="publish-connect" id="publishConnections"></div>
-              <div class="muted" style="margin-top:12px">
-                平台登录态只保存在当前浏览器，FlowX 不读取密码或 Cookie。同步成功后先进入平台草稿箱，请检查排版后再公开发布。
-                <a href="https://chrome.google.com/webstore/detail/%E5%BE%AE%E4%BF%A1%E5%90%8C%E6%AD%A5%E5%8A%A9%E6%89%8B/hchobocdmclopcbnibdnoafilagadion" target="_blank" rel="noreferrer" style="color:var(--brand)">安装文章同步助手</a>
-              </div>
-            </div>
-            <div class="panel">
-              <div class="phead">
-                <div class="t"><span class="barmark"></span>发布任务中心</div>
-                <button class="btn ghost sm" onclick="resumePublishQueue(true)">▶ 继续待处理任务</button>
-              </div>
-              <div class="chips" id="publishJobSummary"></div>
-              <div class="job-list" id="publishJobList" style="margin-top:10px"></div>
-            </div>
-            <div class="cards" id="publishCards"></div>
           </section>
 
           <section class="view" id="settings">
@@ -1235,7 +1258,7 @@
 
     <div class="modalbg" id="editModal">
       <div class="modal">
-        <h2>编辑稿件</h2>
+        <h2>稿件修改</h2>
         <input type="hidden" id="editId" /><label class="field"
           >标题<input id="editTitle" maxlength="60" /></label
         ><label class="field">正文<textarea id="editBody"></textarea></label>
@@ -1285,6 +1308,7 @@
         activePublicationId = "",
         queueResumeBusy = false;
       const selectedPublishPlatforms = new Set(["toutiao"]);
+      const selectedArticleIds = new Set();
       let appSettings = {
         keys: {},
         hotspot: { sources: [], all_sources: [], base_url: "" },
@@ -1328,15 +1352,14 @@
         return d;
       }
       function show(v) {
-        const navView =
-          v === "review" ? "produce" : v === "publish" ? "library" : v;
+        const navView = v === "review" ? "produce" : v;
         $$(".view").forEach((x) => x.classList.toggle("on", x.id === v));
         $$(".navitem").forEach((x) =>
           x.classList.toggle("on", x.dataset.v === navView),
         );
         scrollTo({ top: 0 });
-        if (["review", "library", "publish"].includes(v)) loadArticles();
-        if (v === "publish") {
+        if (["review", "library"].includes(v)) loadArticles();
+        if (v === "library") {
           refreshPublishConnections();
           setTimeout(() => refreshPublishConnections(), 1200);
         }
@@ -1458,17 +1481,32 @@
       }
       function recount() {
         const n = $$("#hotspotBox input:checked").length;
-        $("#selN").textContent = `已选 ${n} 篇`;
+        $("#selN").textContent = `已选 ${n} / 20 篇`;
+      }
+      async function deleteSelectedTopics() {
+        const nodes = $$("#hotspotBox input:checked");
+        if (!nodes.length) return toast("请先勾选要删除的热点");
+        try {
+          await api("/hotspots/hide", {
+            method: "POST",
+            body: JSON.stringify({ titles: nodes.map((n) => n.dataset.title) }),
+          });
+          nodes.forEach((node) => node.closest(".topic")?.remove());
+          recount();
+          toast(`已从选题池移除 ${nodes.length} 条热点`);
+        } catch (error) {
+          toast(error.message);
+        }
       }
       async function generateSelected() {
         const nodes = $$("#hotspotBox input:checked");
         if (!nodes.length) return toast("请先勾选选题");
-        if (nodes.length > 5) return toast("单次最多生成 5 篇");
+        if (nodes.length > 20) return toast("单次最多生成 20 篇");
         show("produce");
         $("#produceCards").innerHTML =
           '<div class="empty">正在搜索素材、写作并质检，请稍候…</div>';
         $("#produceSummary").innerHTML =
-          `<b>本轮 ${nodes.length} 篇</b><span class="muted">处理中</span>`;
+          `<b>本轮 ${nodes.length} 篇</b><span class="muted">4 路并发处理中</span>`;
         try {
           const d = await api("/generate", {
             method: "POST",
@@ -1521,6 +1559,7 @@
         );
         if (input?.checked) selectedPublishPlatforms.add(platform);
         else selectedPublishPlatforms.delete(platform);
+        updateBatchBar();
       }
       function renderPublishConnections() {
         const bridgeReady = Boolean(publishBridge());
@@ -1569,7 +1608,7 @@
           publishAccounts = await readPublishAccounts();
           renderPublishConnections();
           if (
-            $("#publish")?.classList.contains("on") &&
+            $("#library")?.classList.contains("on") &&
             publishJobs.some((job) => job.status === "queued")
           )
             setTimeout(() => resumePublishQueue(false), 100);
@@ -1672,12 +1711,17 @@
           }
         }
       }
-      async function createPublishJobs(articleId, platforms) {
+      async function createPublishJobs(articleIds, platforms) {
+        const ids = Array.isArray(articleIds) ? articleIds : [articleIds];
         const data = await api("/publish-jobs", {
           method: "POST",
-          body: JSON.stringify({ article_id: articleId, platforms }),
+          body: JSON.stringify({ article_ids: ids, platforms }),
         });
         publishJobs.unshift(...(data.jobs || []));
+        ids.forEach((id) => {
+          const article = articles.find((item) => item.id === id);
+          if (article) article.status = "已发";
+        });
         return data.jobs || [];
       }
       async function executePublishJobs(article, jobs, accountMap) {
@@ -1749,18 +1793,18 @@
           () => {},
         );
       }
-      async function oneClickPublish(id, onlyToutiao = false) {
+      async function oneClickPublish(id) {
         if (activePublicationId)
           return toast("请等待当前稿件同步完成后再开始下一篇");
         const article = articles.find((item) => item.id === id);
         if (!article) return toast("稿件不存在");
-        const targets = onlyToutiao ? ["toutiao"] : [...selectedPublishPlatforms];
+        const targets = [...selectedPublishPlatforms];
         if (!targets.length) return toast("请至少选择一个发布平台");
         activePublicationId = id;
         renderPublish();
         try {
           await ensureArticleCover(article);
-          publishAccounts = await readPublishAccounts();
+          if (!publishAccounts.length) publishAccounts = await readPublishAccounts();
           renderPublishConnections();
           const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
           const missing = targets.filter((type) => !accountMap.has(type));
@@ -1771,10 +1815,39 @@
             return toast(`请先登录：${names.join("、")}`);
           }
           const jobs = await createPublishJobs(id, targets);
+          renderLibrary();
           await executePublishJobs(article, jobs, accountMap);
         } catch (error) {
           activePublicationId = "";
           renderPublish();
+          toast(error.message);
+        }
+      }
+      async function batchPublishSelected() {
+        if (activePublicationId || queueResumeBusy)
+          return toast("请等待当前稿件同步完成后再批量发布");
+        const ids = [...selectedArticleIds].filter((id) => {
+          const article = articles.find((item) => item.id === id);
+          return article && article.status !== "已发" && qinfo(article).cls !== "r";
+        });
+        if (!ids.length) return toast("请先勾选可发布稿件");
+        const targets = [...selectedPublishPlatforms];
+        if (!targets.length) return toast("请至少选择一个发布平台");
+        try {
+          if (!publishAccounts.length) publishAccounts = await readPublishAccounts();
+          renderPublishConnections();
+          const connected = new Set(publishAccounts.map((account) => account.type));
+          const missing = targets.filter((type) => !connected.has(type));
+          if (missing.length)
+            return toast(
+              `请先登录：${missing.map((type) => PUBLISH_PLATFORMS[type].name).join("、")}`,
+            );
+          await createPublishJobs(ids, targets);
+          selectedArticleIds.clear();
+          renderLibrary();
+          toast(`${ids.length} 篇稿件已排队，将按顺序自动发布`);
+          setTimeout(() => resumePublishQueue(false), 100);
+        } catch (error) {
           toast(error.message);
         }
       }
@@ -1804,7 +1877,7 @@
         }
         queueResumeBusy = true;
         try {
-          publishAccounts = await readPublishAccounts();
+          if (!publishAccounts.length) publishAccounts = await readPublishAccounts();
           renderPublishConnections();
           const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
           const articleId = queued[0].article_id;
@@ -1832,21 +1905,35 @@
           ? ` style="background-image:url('${esc(a.cover_url)}')"`
           : "";
         let acts = "";
-        if (["produce", "review", "library"].includes(ctx)) {
+        if (["produce", "review"].includes(ctx)) {
           if (q.p.length)
             acts += `<button class="btn tool sm" onclick="revise('${a.id}',this)">🔧 一键优化</button>`;
-          acts += `<button class="btn ghost sm" onclick="openEdit('${a.id}')">编辑</button>`;
+          acts += `<button class="btn ghost sm" onclick="openEdit('${a.id}')">稿件修改</button>`;
         }
-        if (ctx === "library")
+        if (ctx === "library") {
+          acts = `<button class="btn ghost sm" onclick="openEdit('${a.id}')">稿件修改</button><button class="btn ghost sm" onclick="autoCover('${a.id}',this)">🖼 自动换封面</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : "一键发布"}</button>`;
           acts +=
             a.status === "已发"
               ? `<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`
-              : `<button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">标记已发</button>`;
-        if (ctx === "publish") {
-          const busy = Boolean(activePublicationId);
-          acts = `<button class="btn primary sm" onclick="oneClickPublish('${a.id}',true)" ${busy ? "disabled" : ""}>${activePublicationId === a.id ? "同步进行中…" : "一键进入头条草稿箱 →"}</button><button class="btn tool sm" onclick="oneClickPublish('${a.id}')" ${busy ? "disabled" : ""}>同步勾选平台</button><button class="btn ghost sm" onclick="autoCover('${a.id}',this)">🖼 自动换封面</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">确认已公开 · 归档</button>`;
+              : `<button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">标记已发布</button>`;
         }
-        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : ctx === "publish" ? "待发布稿件" : "AI 内容稿件"}</div><div class="cardin"><div class="row1"><span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')">${esc(a.body)}</div>${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "publish" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
+        const selector =
+          ctx === "library" && a.status !== "已发" && !red
+            ? `<label class="article-select"><input type="checkbox" ${selectedArticleIds.has(a.id) ? "checked" : ""} onchange="toggleArticleSelection('${a.id}',this.checked)">批量选择</label>`
+            : "";
+        const copyTools = `<div class="body-copy"><button class="btn ghost sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button></div>`;
+        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${esc(a.body)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
+      }
+      function toggleArticleSelection(id, checked) {
+        checked ? selectedArticleIds.add(id) : selectedArticleIds.delete(id);
+        updateBatchBar();
+      }
+      function updateBatchBar() {
+        const bar = $("#libraryBatchBar");
+        if (!bar) return;
+        const count = selectedArticleIds.size;
+        bar.hidden = count === 0;
+        $("#batchN").textContent = `已选 ${count} 篇 · 将发布到 ${selectedPublishPlatforms.size} 个平台`;
       }
       async function loadArticles(render = true) {
         try {
@@ -1856,6 +1943,11 @@
             api("/publish-jobs"),
           ]);
           articles = articleData.articles || [];
+          for (const id of [...selectedArticleIds]) {
+            const article = articles.find((item) => item.id === id);
+            if (!article || article.status === "已发" || qinfo(article).cls === "r")
+              selectedArticleIds.delete(id);
+          }
           publishJobs = jobData.jobs || [];
           const storedRuns = {};
           for (const item of publicationData.publications || []) {
@@ -1868,11 +1960,10 @@
           if (render) {
             renderReview();
             renderLibrary();
-            renderPublish();
           }
           if (
             publishBridge() &&
-            $("#publish")?.classList.contains("on") &&
+            $("#library")?.classList.contains("on") &&
             publishJobs.some((job) => job.status === "queued")
           )
             setTimeout(() => resumePublishQueue(false), 300);
@@ -1909,15 +2000,11 @@
         $("#libraryCards").innerHTML =
           list.map((a) => cardHtml(a, "library")).join("") ||
           '<div class="empty">当前分类没有稿件</div>';
+        renderPublishManager();
+        updateBatchBar();
       }
       function renderPublish() {
-        const list = articles.filter(
-          (a) => a.status === "未发" && a.qc_level !== "red",
-        );
-        $("#publishCards").innerHTML =
-          list.map((a) => cardHtml(a, "publish")).join("") ||
-          '<div class="empty">暂无可发布稿件；红档会被质量闸拦截</div>';
-        renderPublishManager();
+        renderLibrary();
       }
       function renderPublishManager() {
         const summary = { queued: 0, running: 0, done: 0, failed: 0 };
@@ -1953,7 +2040,7 @@
                 return `<div class="job-row"><b>${platform ? platform.name : esc(job.platform)}</b><span class="job-title" title="${esc(article?.title || job.article_id)}">${esc(article?.title || job.article_id)}</span><span class="job-state ${esc(job.status)}">${labels[job.status] || esc(job.status)}</span><span class="job-actions">${action}</span></div>`;
               })
               .join("")
-          : '<div class="muted">还没有发布任务；点击稿件的“进入头条草稿箱”即可创建。</div>';
+          : '<div class="muted">还没有发布任务；可点击单篇“一键发布”，或勾选多篇后批量发布。</div>';
       }
       $$("#tabs .tab").forEach(
         (t) =>

@@ -90,3 +90,17 @@ CREATE INDEX IF NOT EXISTS idx_user_publish_jobs_queue
   ON user_publish_jobs(owner_email, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_user_publish_jobs_article
   ON user_publish_jobs(owner_email, article_id, created_at DESC);
+
+-- Topics that should no longer occupy the discovery list. Successful
+-- generation and explicit user deletion both write here, scoped by account.
+CREATE TABLE IF NOT EXISTS user_hidden_topics (
+  owner_email TEXT NOT NULL,
+  topic_key TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT 'manual',
+  hidden_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (owner_email, topic_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_hidden_topics_account
+  ON user_hidden_topics(owner_email, hidden_at DESC);
