@@ -4,7 +4,7 @@
 # 标题公式参照头条爆款：数字/具体事实 + 悬念或反问 + 情绪落点，可用感叹号、冒号引金句。
 
 # 赛道显示顺序（选题页拖拽芯片自动维护；未列出的赛道排在后面）
-track_order: [minsheng, tiyu, yule, keji, caiqi, shishi, jiankang, lishi, meishi]
+track_order: [keji, caiqi, minsheng, shishi, tiyu, yule, jiankang, lishi, meishi]
 
 tracks:
 
