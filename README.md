@@ -9,7 +9,7 @@ FlowX 是一套面向中文内容团队的本地优先 AI 内容工作流：抓�
 - 云端工作台：<https://flowx-app.hans-pan007.workers.dev>
 - 产品介绍站：<https://flowx-2hv.pages.dev>
 
-云端工作台运行在 Cloudflare Workers + D1，支持热点抓取、AI 生成、质检、稿库、编辑与状态管理。首次访问需要维护者提供的登录密码，登录后在“API 设置”中配置自己的 DeepSeek 与 Tavily Key。
+云端工作台运行在 Cloudflare Workers + D1，按「选题、生产、审核、稿库、发布、设置」组织完整工作流。首次访问使用获准的 Google 账号登录；登录会话在同一浏览器中保留 30 天。登录后可在“设置”中配置自己的 DeepSeek 与 Tavily Key。
 
 ## 为什么是“本地优先”
 

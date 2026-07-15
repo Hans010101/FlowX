@@ -20,16 +20,101 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
 });
 
-function unauthorized() {
-  return new Response("FlowX Cloud 需要登录", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="FlowX Cloud", charset="UTF-8"' }
-  });
-}
-
-function isAuthorized(request, env) {
+function isBasicAuthorized(request, env) {
   const expected = `Basic ${btoa(`flowx:${env.FLOWX_PASSWORD || ""}`)}`;
   return Boolean(env.FLOWX_PASSWORD) && request.headers.get("Authorization") === expected;
+}
+
+function htmlEscape(value) {
+  return String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function parseCookies(request) {
+  return Object.fromEntries((request.headers.get("Cookie") || "").split(";").map(v => v.trim()).filter(Boolean).map(v => {
+    const i = v.indexOf("=");
+    return [v.slice(0, i), decodeURIComponent(v.slice(i + 1))];
+  }));
+}
+
+function base64Url(bytes) {
+  return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function fromBase64Url(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return base64ToBytes(normalized);
+}
+
+async function hmac(value, secret) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+  return base64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))));
+}
+
+async function makeSession(user, env) {
+  const payload = base64Url(new TextEncoder().encode(JSON.stringify({
+    email: user.email, name: user.name || user.email, picture: user.picture || "",
+    exp: Math.floor(Date.now() / 1000) + 30 * 24 * 3600
+  })));
+  return `${payload}.${await hmac(payload, env.SESSION_SECRET)}`;
+}
+
+async function readSession(request, env) {
+  const raw = parseCookies(request).flowx_session;
+  if (!raw || !env.SESSION_SECRET) return null;
+  const [payload, signature] = raw.split(".");
+  if (!payload || !signature || await hmac(payload, env.SESSION_SECRET) !== signature) return null;
+  try {
+    const data = JSON.parse(new TextDecoder().decode(fromBase64Url(payload)));
+    if (!data.email || data.exp < Date.now() / 1000) return null;
+    return data;
+  } catch { return null; }
+}
+
+function loginPage(env, error = "") {
+  const ready = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+  return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · FlowX</title><style>:root{--paper:#F4ECDD;--surface:#FDFAF3;--ink:#2A231E;--soft:#7C7064;--line:#E6DAC6;--brand:#AE352B}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--paper);color:var(--ink);font:15px/1.6 -apple-system,"PingFang SC",sans-serif}.box{width:min(430px,calc(100% - 32px));background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:34px;box-shadow:0 18px 55px #4a321e18}.brand{font:800 30px/1 Georgia,serif;color:var(--brand)}h1{font-size:24px;margin:25px 0 7px}p{color:var(--soft);margin:0 0 24px}.google{display:flex;align-items:center;justify-content:center;gap:11px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:white;color:var(--ink);font-weight:700;text-decoration:none}.g{font:800 20px Arial;color:#4285f4}.note{font-size:12px;color:var(--soft);margin-top:18px}.err{color:#DE3A32;background:#FBE4E1;padding:9px 11px;border-radius:8px;margin-bottom:14px}</style><main class="box"><div class="brand">FlowX</div><h1>登录内容工作台</h1><p>使用获授权的 Google 账号继续。登录状态将在当前浏览器保持 30 天。</p>${error ? `<div class="err">${htmlEscape(error)}</div>` : ""}${ready ? '<a class="google" href="/auth/login"><span class="g">G</span> 使用 Google 账号登录</a>' : '<div class="err">Google OAuth 尚未完成配置</div>'}<div class="note">仅允许管理员账号访问 · API Key 与稿件数据不会提供给 Google</div></main></html>`, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+async function verifyGoogleIdToken(token, env) {
+  const [headerPart, payloadPart, signaturePart] = token.split(".");
+  if (!signaturePart) throw new Error("Google 身份令牌格式无效");
+  const header = JSON.parse(new TextDecoder().decode(fromBase64Url(headerPart)));
+  const payload = JSON.parse(new TextDecoder().decode(fromBase64Url(payloadPart)));
+  const certs = await (await fetch("https://www.googleapis.com/oauth2/v3/certs", { cf: { cacheTtl: 3600, cacheEverything: true } })).json();
+  const jwk = certs.keys?.find(k => k.kid === header.kid);
+  if (!jwk || header.alg !== "RS256") throw new Error("无法验证 Google 签名");
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+  const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, fromBase64Url(signaturePart), new TextEncoder().encode(`${headerPart}.${payloadPart}`));
+  if (!ok || !["accounts.google.com", "https://accounts.google.com"].includes(payload.iss) || payload.aud !== env.GOOGLE_CLIENT_ID || payload.exp < Date.now() / 1000 || !payload.email_verified) throw new Error("Google 身份验证未通过");
+  const allowed = String(env.ALLOWED_EMAILS || "").split(",").map(v => v.trim().toLowerCase()).filter(Boolean);
+  if (allowed.length && !allowed.includes(String(payload.email).toLowerCase())) throw new Error("该 Google 账号未获 FlowX 访问权限");
+  return payload;
+}
+
+async function handleAuth(request, env) {
+  const url = new URL(request.url);
+  if (url.pathname === "/auth/login") {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return loginPage(env);
+    const state = base64Url(crypto.getRandomValues(new Uint8Array(24)));
+    const redirect = `${url.origin}/auth/callback`;
+    const target = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    target.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: "code", scope: "openid email profile", state, prompt: "select_account" }).toString();
+    return new Response(null, { status: 302, headers: { Location: target.toString(), "Set-Cookie": `flowx_oauth_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600` } });
+  }
+  if (url.pathname === "/auth/callback") {
+    const cookies = parseCookies(request);
+    if (!url.searchParams.get("code") || !url.searchParams.get("state") || cookies.flowx_oauth_state !== url.searchParams.get("state")) return loginPage(env, "登录状态校验失败，请重试");
+    try {
+      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code: url.searchParams.get("code"), client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: `${url.origin}/auth/callback`, grant_type: "authorization_code" }) });
+      const tokens = await tokenResponse.json();
+      if (!tokenResponse.ok || !tokens.id_token) throw new Error(tokens.error_description || "Google 登录交换失败");
+      const user = await verifyGoogleIdToken(tokens.id_token, env);
+      const session = await makeSession(user, env);
+      return new Response(null, { status: 302, headers: { Location: "/", "Set-Cookie": `flowx_session=${encodeURIComponent(session)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`, "Cache-Control": "no-store" } });
+    } catch (error) { return loginPage(env, error.message); }
+  }
+  if (url.pathname === "/auth/logout") return new Response(null, { status: 302, headers: { Location: "/", "Set-Cookie": "flowx_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" } });
+  return null;
 }
 
 function bytesToBase64(bytes) {
@@ -193,10 +278,11 @@ async function generateOne(item, env) {
   return saveArticle(env, article, qc);
 }
 
-async function handleApi(request, env) {
+async function handleApi(request, env, user) {
   const url = new URL(request.url);
   const path = url.pathname;
   if (path === "/api/health") return json({ ok: true, service: "FlowX Cloud", region: request.cf?.colo || "unknown" });
+  if (path === "/api/me") return json({ user, session_days: 30, auth: user?.emergency ? "basic" : "google" });
 
   if (path === "/api/settings" && request.method === "GET") {
     const rows = await env.DB.prepare("SELECT key FROM config").all();
@@ -266,10 +352,13 @@ async function handleApi(request, env) {
 
 export default {
   async fetch(request, env) {
-    if (!isAuthorized(request, env)) return unauthorized();
     try {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/api/")) return await handleApi(request, env);
+      if (url.pathname.startsWith("/auth/")) return await handleAuth(request, env);
+      let user = await readSession(request, env);
+      if (!user && isBasicAuthorized(request, env)) user = { email: "emergency@flowx.local", name: "Emergency Admin", picture: "", emergency: true };
+      if (!user) return url.pathname.startsWith("/api/") ? json({ error: "请先使用 Google 账号登录", login: "/auth/login" }, 401) : loginPage(env);
+      if (url.pathname.startsWith("/api/")) return await handleApi(request, env, user);
       return env.ASSETS.fetch(request);
     } catch (error) {
       return json({ error: error.message || "服务器错误" }, 500);

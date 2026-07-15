@@ -28,12 +28,20 @@ Cloudflare 的边缘网络会自动选择离访问者较近的节点，不提供
 ```bash
 npx wrangler d1 create flowx-cloud-db
 npx wrangler d1 execute flowx-cloud-db --remote --file cloudflare-app/schema.sql
-npx wrangler secret put FLOWX_PASSWORD --config cloudflare-app/wrangler.jsonc
 npx wrangler secret put CONFIG_KEY --config cloudflare-app/wrangler.jsonc
+npx wrangler secret put SESSION_SECRET --config cloudflare-app/wrangler.jsonc
+npx wrangler secret put ALLOWED_EMAILS --config cloudflare-app/wrangler.jsonc
+npx wrangler secret put GOOGLE_CLIENT_ID --config cloudflare-app/wrangler.jsonc
+npx wrangler secret put GOOGLE_CLIENT_SECRET --config cloudflare-app/wrangler.jsonc
 npx wrangler deploy --config cloudflare-app/wrangler.jsonc
 ```
 
-当前实例：<https://flowx-app.hans-pan007.workers.dev>。整个站点使用 HTTP Basic Authentication 保护；API Key 在 Worker 内以 AES-GCM 加密后写入 D1，仓库和前端只保存“是否已配置”。
+在 Google Cloud 创建“Web 应用”OAuth 客户端，并配置：
+
+- 已获授权的 JavaScript 来源：`https://flowx-app.hans-pan007.workers.dev`
+- 已获授权的重定向 URI：`https://flowx-app.hans-pan007.workers.dev/auth/callback`
+
+`ALLOWED_EMAILS` 使用英文逗号分隔允许登录的 Google 邮箱。`SESSION_SECRET` 应使用至少 32 字节的随机值。当前实例：<https://flowx-app.hans-pan007.workers.dev>。登录态由 `HttpOnly`、`Secure`、`SameSite=Lax` Cookie 保存 30 天；API Key 在 Worker 内以 AES-GCM 加密后写入 D1，仓库和前端只保存“是否已配置”。
 
 ## 为什么不把 FastAPI 原样放进 Workers
 
