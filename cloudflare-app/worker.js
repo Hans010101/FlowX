@@ -835,6 +835,73 @@ async function pexelsCover(article, pexelsKey, deepseekKey) {
   }
 }
 
+const API_KEY_CONFIG = {
+  deepseek: { config: "DEEPSEEK_API_KEY", name: "DeepSeek" },
+  tavily: { config: "TAVILY_API_KEY", name: "Tavily" },
+  bocha: { config: "BOCHA_API_KEY", name: "博查" },
+  pexels: { config: "PEXELS_API_KEY", name: "Pexels" },
+};
+
+async function validateApiKey(provider, key) {
+  const label = API_KEY_CONFIG[provider]?.name || provider;
+  if (!key) return { ok: false, provider, message: "未配置" };
+  try {
+    let response;
+    if (provider === "deepseek") {
+      response = await fetch("https://api.deepseek.com/models", {
+        headers: { authorization: `Bearer ${key}` },
+      });
+    } else if (provider === "tavily") {
+      response = await fetch(TAVILY_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          query: "FlowX API connection test",
+          search_depth: "basic",
+          max_results: 1,
+          include_answer: false,
+          api_key: key,
+        }),
+      });
+    } else if (provider === "bocha") {
+      response = await fetch(BOCHA_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({ query: "FlowX", summary: false, count: 1 }),
+      });
+    } else if (provider === "pexels") {
+      response = await fetch(`${PEXELS_URL}?query=nature&per_page=1`, {
+        headers: { Authorization: key },
+      });
+    }
+    if (response?.ok) return { ok: true, provider, message: "连接正常" };
+    const status = response?.status || 0;
+    const message =
+      status === 401 || status === 403
+        ? "Key 无效或无权限"
+        : status === 429
+          ? "额度或频率已受限"
+          : `连接失败（HTTP ${status || "未知"}）`;
+    return { ok: false, provider, message };
+  } catch {
+    return { ok: false, provider, message: `${label} 网络连接失败` };
+  }
+}
+
+async function validateStoredApiKeys(env, email) {
+  return Promise.all(
+    Object.entries(API_KEY_CONFIG).map(async ([provider, config]) =>
+      validateApiKey(provider, await getConfig(env, email, config.config)),
+    ),
+  );
+}
+
 async function deepseek(messages, key, temperature = 0.7) {
   const response = await fetch(DEEPSEEK_URL, {
     method: "POST",
@@ -850,10 +917,13 @@ async function deepseek(messages, key, temperature = 0.7) {
     }),
   });
   const data = await response.json();
-  if (!response.ok)
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403)
+      throw new Error("DeepSeek Key 无效，请到设置中重新填写并测试连接");
     throw new Error(
       data?.error?.message || `DeepSeek 调用失败：${response.status}`,
     );
+  }
   const raw = data?.choices?.[0]?.message?.content || "{}";
   return JSON.parse(raw.replace(/^```json\s*|\s*```$/g, ""));
 }
@@ -1059,21 +1129,38 @@ async function handleApi(request, env, user) {
   }
   if (path === "/api/settings/keys" && request.method === "POST") {
     const body = await request.json();
-    if (String(body.deepseek || "").trim())
-      await setConfig(
-        env,
-        email,
-        "DEEPSEEK_API_KEY",
-        String(body.deepseek).trim(),
+    const submitted = Object.fromEntries(
+      Object.keys(API_KEY_CONFIG)
+        .map((provider) => [provider, String(body[provider] || "").trim()])
+        .filter(([, value]) => value),
+    );
+    if (!Object.keys(submitted).length)
+      return json({ error: "请至少填写一个需要更新的 Key" }, 400);
+    const tests = await Promise.all(
+      Object.entries(submitted).map(([provider, key]) =>
+        validateApiKey(provider, key),
+      ),
+    );
+    const invalid = tests.filter((test) => !test.ok);
+    if (invalid.length)
+      return json(
+        {
+          error: invalid
+            .map(
+              (test) =>
+                `${API_KEY_CONFIG[test.provider].name}：${test.message}`,
+            )
+            .join("；"),
+          tests,
+        },
+        400,
       );
-    if (String(body.tavily || "").trim())
-      await setConfig(env, email, "TAVILY_API_KEY", String(body.tavily).trim());
-    if (String(body.bocha || "").trim())
-      await setConfig(env, email, "BOCHA_API_KEY", String(body.bocha).trim());
-    if (String(body.pexels || "").trim())
-      await setConfig(env, email, "PEXELS_API_KEY", String(body.pexels).trim());
-    return json({ ok: true });
+    for (const [provider, key] of Object.entries(submitted))
+      await setConfig(env, email, API_KEY_CONFIG[provider].config, key);
+    return json({ ok: true, tests });
   }
+  if (path === "/api/settings/test" && request.method === "POST")
+    return json({ tests: await validateStoredApiKeys(env, email) });
   if (path === "/api/settings/preferences" && request.method === "POST") {
     const body = await request.json();
     if (Array.isArray(body.sources)) {
@@ -1112,6 +1199,15 @@ async function handleApi(request, env, user) {
     const body = await request.json();
     const items = Array.isArray(body.items) ? body.items.slice(0, 5) : [];
     if (!items.length) return json({ error: "至少选择一个选题" }, 400);
+    const deepseekTest = await validateApiKey(
+      "deepseek",
+      await getConfig(env, email, "DEEPSEEK_API_KEY"),
+    );
+    if (!deepseekTest.ok)
+      return json(
+        { error: `DeepSeek：${deepseekTest.message}，请先在设置中更换 Key` },
+        400,
+      );
     const results = [];
     for (const item of items) {
       try {

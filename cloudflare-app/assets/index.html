@@ -1006,7 +1006,14 @@
                 </div>
                 <div class="actions">
                   <button class="btn primary sm" onclick="saveKeys()">
-                    保存当前账号 API 设置
+                    验证并保存 API 设置
+                  </button>
+                  <button
+                    class="btn ghost sm"
+                    id="testKeysBtn"
+                    onclick="testKeys()"
+                  >
+                    测试已保存的 4 项连接
                   </button>
                 </div>
               </div>
@@ -1478,7 +1485,7 @@
           appSettings = s;
           for (const key of ["deepseek", "tavily", "bocha", "pexels"]) {
             $("#" + key + "Status").textContent = s.keys[key]
-              ? "✓ 当前账号已配置"
+              ? "已保存 · 待连接测试"
               : "当前账号未配置";
           }
           $("#dailyhotBase").value = s.hotspot.base_url || "";
@@ -1491,7 +1498,7 @@
       }
       async function saveKeys() {
         try {
-          await api("/settings/keys", {
+          const d = await api("/settings/keys", {
             method: "POST",
             body: JSON.stringify({
               deepseek: $("#deepseekKey").value,
@@ -1502,10 +1509,41 @@
           });
           for (const key of ["deepseek", "tavily", "bocha", "pexels"])
             $("#" + key + "Key").value = "";
-          toast("API Key 已绑定并加密保存到当前账号");
-          loadSettings();
+          renderKeyTests(d.tests || []);
+          toast("连接验证通过，Key 已加密保存到当前账号");
         } catch (e) {
           toast(e.message);
+        }
+      }
+      function renderKeyTests(tests) {
+        for (const test of tests) {
+          const target = $("#" + test.provider + "Status");
+          if (!target) continue;
+          target.textContent = `${test.ok ? "✓" : "✕"} ${test.message}`;
+          target.style.color = test.ok ? "var(--ok)" : "var(--stop)";
+        }
+      }
+      async function testKeys() {
+        const button = $("#testKeysBtn");
+        button.disabled = true;
+        button.textContent = "测试中…";
+        try {
+          const d = await api("/settings/test", {
+            method: "POST",
+            body: "{}",
+          });
+          renderKeyTests(d.tests || []);
+          const failed = (d.tests || []).filter((test) => !test.ok);
+          toast(
+            failed.length
+              ? `${failed.length} 项连接异常，请重新填写对应 Key`
+              : "4 项 API 连接全部正常",
+          );
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          button.disabled = false;
+          button.textContent = "测试已保存的 4 项连接";
         }
       }
       async function savePreferences(quiet = false) {
