@@ -53,3 +53,19 @@ CREATE TABLE IF NOT EXISTS user_articles (
 
 CREATE INDEX IF NOT EXISTS idx_user_articles_created_at ON user_articles(owner_email, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_articles_status ON user_articles(owner_email, status);
+
+-- Per-account delivery receipts. Platform login cookies remain in the user's
+-- browser; only the non-sensitive sync result is stored in D1.
+CREATE TABLE IF NOT EXISTS user_publications (
+  owner_email TEXT NOT NULL,
+  article_id TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT NOT NULL DEFAULT '',
+  draft_link TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (owner_email, article_id, platform)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_publications_article
+  ON user_publications(owner_email, article_id, updated_at DESC);

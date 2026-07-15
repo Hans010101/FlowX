@@ -1226,6 +1226,59 @@ async function handleApi(request, env, user) {
       .all();
     return json({ articles: rows.results || [] });
   }
+  if (path === "/api/publications" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT article_id,platform,status,error,draft_link,updated_at FROM user_publications WHERE owner_email=? ORDER BY updated_at DESC LIMIT 1500",
+    )
+      .bind(email)
+      .all();
+    return json({ publications: rows.results || [] });
+  }
+  if (path === "/api/publications" && request.method === "POST") {
+    const body = await request.json();
+    const articleId = String(body.article_id || "").trim();
+    const allowedPlatforms = new Set(["toutiao", "baijiahao", "zhihu"]);
+    const allowedStatuses = new Set(["pending", "uploading", "done", "failed"]);
+    const results = Array.isArray(body.results) ? body.results.slice(0, 3) : [];
+    if (!/^[a-f0-9]+$/.test(articleId) || !results.length)
+      return json({ error: "发布结果格式无效" }, 400);
+    const article = await env.DB.prepare(
+      "SELECT id FROM user_articles WHERE owner_email=? AND id=?",
+    )
+      .bind(email, articleId)
+      .first();
+    if (!article) return json({ error: "稿件不存在" }, 404);
+    const statements = results
+      .map((result) => ({
+        platform: String(result.platform || ""),
+        status: String(result.status || "pending"),
+        error: String(result.error || "").slice(0, 500),
+        draftLink: String(result.draft_link || "").slice(0, 1000),
+      }))
+      .filter(
+        (result) =>
+          allowedPlatforms.has(result.platform) &&
+          allowedStatuses.has(result.status),
+      )
+      .map((result) =>
+        env.DB.prepare(
+          `INSERT INTO user_publications(owner_email,article_id,platform,status,error,draft_link,updated_at)
+           VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)
+           ON CONFLICT(owner_email,article_id,platform) DO UPDATE SET
+             status=excluded.status,error=excluded.error,draft_link=excluded.draft_link,updated_at=CURRENT_TIMESTAMP`,
+        ).bind(
+          email,
+          articleId,
+          result.platform,
+          result.status,
+          result.error,
+          result.draftLink,
+        ),
+      );
+    if (!statements.length) return json({ error: "没有可保存的平台结果" }, 400);
+    await env.DB.batch(statements);
+    return json({ ok: true });
+  }
   const articleMatch = path.match(/^\/api\/articles\/([a-f0-9]+)$/);
   if (articleMatch && request.method === "PUT") {
     const old = await env.DB.prepare(

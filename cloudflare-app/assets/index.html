@@ -540,6 +540,93 @@
         flex-wrap: wrap;
         margin-top: 13px;
       }
+      .publish-connect {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 13px;
+      }
+      .platform-connect {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--surface-2);
+        padding: 10px 12px;
+      }
+      .platform-connect input {
+        accent-color: var(--brand);
+        width: 17px;
+        height: 17px;
+      }
+      .platform-connect .picon {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        background: white;
+        font-weight: 800;
+        color: var(--brand);
+      }
+      .platform-connect .ptext {
+        min-width: 0;
+        flex: 1;
+      }
+      .platform-connect .ptext b,
+      .platform-connect .ptext span {
+        display: block;
+      }
+      .platform-connect .ptext span {
+        color: var(--ink-faint);
+        font-size: 10px;
+      }
+      .platform-connect.ready {
+        border-color: #bfd5c5;
+        background: var(--ok-bg);
+      }
+      .platform-connect a {
+        color: var(--brand);
+        font-size: 11px;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .publish-status {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .publish-pill {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--surface-2);
+        color: var(--ink-soft);
+        padding: 3px 9px;
+        font-size: 11px;
+      }
+      .publish-pill.uploading,
+      .publish-pill.pending {
+        border-color: #dfc47e;
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+      .publish-pill.done {
+        border-color: #bfd5c5;
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .publish-pill.failed {
+        border-color: #e6c4be;
+        background: var(--stop-bg);
+        color: var(--stop);
+      }
+      .publish-pill a {
+        color: inherit;
+        font-weight: 700;
+      }
       .tabs {
         display: flex;
         gap: 4px;
@@ -754,6 +841,9 @@
         .keyrow input {
           width: 100%;
         }
+        .publish-connect {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
@@ -917,7 +1007,7 @@
               <div>
                 <p class="eyebrow">Step 03 · Publish</p>
                 <h1>发布</h1>
-                <p>复制合格稿件到目标平台，发布完成后归档状态</p>
+                <p>一次同步到今日头条、百家号与知乎草稿箱</p>
               </div>
               <button class="btn ghost" onclick="show('library')">
                 ← 返回稿库
@@ -925,11 +1015,14 @@
             </div>
             <div class="panel">
               <div class="phead">
-                <div class="t"><span class="barmark"></span>云端发布说明</div>
+                <div class="t"><span class="barmark"></span>三平台连接</div>
+                <button class="btn ghost sm" onclick="refreshPublishConnections(true)">↻ 检测登录状态</button>
               </div>
-              <div class="muted">
-                Cloudflare 无法访问你电脑里的平台 Cookie 与 Wechatsync
-                扩展，因此这里提供审核后的标题/正文复制和发布归档；本地完整版仍可同步到平台草稿箱。
+              <div class="muted" id="publishBridgeStatus">正在检测文章同步助手扩展…</div>
+              <div class="publish-connect" id="publishConnections"></div>
+              <div class="muted" style="margin-top:12px">
+                平台登录态只保存在当前浏览器，FlowX 不读取密码或 Cookie。同步成功后先进入平台草稿箱，请检查排版后再公开发布。
+                <a href="https://chrome.google.com/webstore/detail/%E5%BE%AE%E4%BF%A1%E5%90%8C%E6%AD%A5%E5%8A%A9%E6%89%8B/hchobocdmclopcbnibdnoafilagadion" target="_blank" rel="noreferrer" style="color:var(--brand)">安装文章同步助手</a>
               </div>
             </div>
             <div class="cards" id="publishCards"></div>
@@ -1108,9 +1201,32 @@
         lishi: ["历史", "古代 · 考古 · 文物 · 遗址"],
         meishi: ["美食", "菜谱 · 餐厅 · 食材 · 小吃"],
       };
+      const PUBLISH_PLATFORMS = {
+        toutiao: {
+          name: "今日头条",
+          icon: "头",
+          login: "https://mp.toutiao.com/",
+        },
+        baijiahao: {
+          name: "百家号",
+          icon: "百",
+          login: "https://baijiahao.baidu.com/builder/rc/home",
+        },
+        zhihu: {
+          name: "知乎",
+          icon: "知",
+          login: "https://www.zhihu.com/creator",
+        },
+      };
       let articles = [],
         generated = [],
         filter = "all";
+      let publishAccounts = [],
+        publishRuns = {},
+        activePublicationId = "";
+      const selectedPublishPlatforms = new Set(
+        Object.keys(PUBLISH_PLATFORMS),
+      );
       let appSettings = {
         keys: {},
         hotspot: { sources: [], all_sources: [], base_url: "" },
@@ -1162,6 +1278,10 @@
         );
         scrollTo({ top: 0 });
         if (["review", "library", "publish"].includes(v)) loadArticles();
+        if (v === "publish") {
+          refreshPublishConnections();
+          setTimeout(() => refreshPublishConnections(), 1200);
+        }
         if (v === "settings") loadSettings();
       }
       $$(".navitem").forEach((x) => (x.onclick = () => show(x.dataset.v)));
@@ -1334,6 +1454,193 @@
             a.qc_level === "green" ? "g" : a.qc_level === "yellow" ? "y" : "r",
         };
       }
+      function publishBridge() {
+        return window.$syncer || window.$poster || null;
+      }
+      function togglePublishPlatform(platform) {
+        const input = document.querySelector(
+          `[data-publish-platform="${platform}"]`,
+        );
+        if (input?.checked) selectedPublishPlatforms.add(platform);
+        else selectedPublishPlatforms.delete(platform);
+      }
+      function renderPublishConnections() {
+        const bridgeReady = Boolean(publishBridge());
+        const connected = new Set(publishAccounts.map((a) => a.type));
+        $("#publishBridgeStatus").textContent = bridgeReady
+          ? `扩展已连接 · ${connected.size} 个平台账号可用`
+          : "未检测到文章同步助手扩展；安装或启用后请刷新本页";
+        $("#publishBridgeStatus").style.color = bridgeReady
+          ? "var(--ok)"
+          : "var(--warn)";
+        $("#publishConnections").innerHTML = Object.entries(
+          PUBLISH_PLATFORMS,
+        )
+          .map(([type, platform]) => {
+            const ready = connected.has(type);
+            return `<label class="platform-connect${ready ? " ready" : ""}"><input type="checkbox" data-publish-platform="${type}" ${selectedPublishPlatforms.has(type) ? "checked" : ""} onchange="togglePublishPlatform('${type}')"><span class="picon">${platform.icon}</span><span class="ptext"><b>${platform.name}</b><span>${ready ? "✓ 已登录，可同步" : bridgeReady ? "未登录平台" : "等待扩展连接"}</span></span>${!ready && bridgeReady ? `<a href="${platform.login}" target="_blank" rel="noreferrer">去登录</a>` : ""}</label>`;
+          })
+          .join("");
+      }
+      function readPublishAccounts() {
+        return new Promise((resolve, reject) => {
+          const bridge = publishBridge();
+          if (!bridge) return reject(new Error("未检测到文章同步助手扩展"));
+          let finished = false;
+          const timer = setTimeout(() => {
+            if (!finished) reject(new Error("扩展响应超时，请刷新页面后重试"));
+          }, 8000);
+          bridge.getAccounts((result) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            resolve(Array.isArray(result) ? result : []);
+          });
+        });
+      }
+      async function refreshPublishConnections(notify = false) {
+        if (!$("#publishConnections")) return;
+        if (!publishBridge()) {
+          publishAccounts = [];
+          renderPublishConnections();
+          if (notify) toast("未检测到文章同步助手，请先安装并刷新页面");
+          return;
+        }
+        $("#publishBridgeStatus").textContent = "正在读取平台登录状态…";
+        try {
+          publishAccounts = await readPublishAccounts();
+          renderPublishConnections();
+          if (notify) {
+            const connected = new Set(publishAccounts.map((a) => a.type));
+            const ready = Object.keys(PUBLISH_PLATFORMS).filter((p) =>
+              connected.has(p),
+            ).length;
+            toast(`三平台中已有 ${ready} 个登录可用`);
+          }
+        } catch (error) {
+          publishAccounts = [];
+          renderPublishConnections();
+          if (notify) toast(error.message);
+        }
+      }
+      function safeLink(value) {
+        try {
+          const url = new URL(value);
+          return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+        } catch {
+          return "";
+        }
+      }
+      function publishStatusHtml(id) {
+        const run = publishRuns[id] || [];
+        if (!run.length) return "";
+        return `<div class="publish-status">${run
+          .map((item) => {
+            const platform = PUBLISH_PLATFORMS[item.platform];
+            if (!platform) return "";
+            const labels = {
+              pending: "等待同步",
+              uploading: item.msg || "同步中",
+              done: "已进草稿箱",
+              failed: "同步失败",
+            };
+            const link = safeLink(item.draft_link || "");
+            return `<span class="publish-pill ${esc(item.status)}" title="${esc(item.error || "")}">${platform.name} · ${esc(labels[item.status] || item.status)}${link ? ` · <a href="${esc(link)}" target="_blank" rel="noreferrer">查看草稿</a>` : ""}</span>`;
+          })
+          .join("")}</div>`;
+      }
+      function articlePublishHtml(article) {
+        const paragraphs = String(article.body || "")
+          .split(/\n{2,}/)
+          .filter((part) => part.trim())
+          .map((part) => `<p>${esc(part).replace(/\n/g, "<br>")}</p>`)
+          .join("");
+        const cover = safeLink(article.cover_url || "");
+        return `${cover ? `<p><img src="${esc(cover)}" alt="" /></p>` : ""}${paragraphs}`;
+      }
+      async function savePublishResults(articleId, results) {
+        try {
+          await api("/publications", {
+            method: "POST",
+            body: JSON.stringify({ article_id: articleId, results }),
+          });
+        } catch (error) {
+          toast(`同步已执行，但结果保存失败：${error.message}`);
+        }
+      }
+      async function oneClickPublish(id) {
+        if (activePublicationId)
+          return toast("请等待当前稿件同步完成后再开始下一篇");
+        const article = articles.find((item) => item.id === id);
+        if (!article) return toast("稿件不存在");
+        const targets = [...selectedPublishPlatforms];
+        if (!targets.length) return toast("请至少选择一个发布平台");
+        try {
+          publishAccounts = await readPublishAccounts();
+          renderPublishConnections();
+          const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
+          const missing = targets.filter((type) => !accountMap.has(type));
+          if (missing.length) {
+            const names = missing.map((type) => PUBLISH_PLATFORMS[type].name);
+            return toast(`请先登录：${names.join("、")}`);
+          }
+          activePublicationId = id;
+          publishRuns[id] = targets.map((platform) => ({
+            platform,
+            status: "pending",
+            error: "",
+            draft_link: "",
+          }));
+          renderPublish();
+          await savePublishResults(id, publishRuns[id]);
+          publishBridge().addTask(
+            {
+              post: {
+                title: article.title,
+                desc: String(article.body || "").replace(/\s+/g, " ").slice(0, 120),
+                content: articlePublishHtml(article),
+                thumb: safeLink(article.cover_url || ""),
+              },
+              accounts: targets.map((type) => accountMap.get(type)),
+            },
+            async (task) => {
+              const statuses = Array.isArray(task?.accounts)
+                ? task.accounts
+                    .filter((account) => targets.includes(account.type))
+                    .map((account) => ({
+                      platform: account.type,
+                      status: account.status || "uploading",
+                      msg: account.msg || "",
+                      error: account.error || "",
+                      draft_link: account.editResp?.draftLink || "",
+                    }))
+                : [];
+              if (!statuses.length) return;
+              publishRuns[id] = statuses;
+              renderPublish();
+              const complete = statuses.every((status) =>
+                ["done", "failed"].includes(status.status),
+              );
+              if (complete) {
+                activePublicationId = "";
+                await savePublishResults(id, statuses);
+                const failed = statuses.filter((status) => status.status === "failed");
+                toast(
+                  failed.length
+                    ? `${statuses.length - failed.length} 个平台同步成功，${failed.length} 个失败`
+                    : `${statuses.length} 个平台已同步到草稿箱`,
+                );
+                renderPublish();
+              }
+            },
+            () => {},
+          );
+        } catch (error) {
+          activePublicationId = "";
+          renderPublish();
+          toast(error.message);
+        }
+      }
       function cardHtml(a, ctx) {
         const q = qinfo(a),
           red = q.cls === "r" || a.status === "待修复";
@@ -1351,13 +1658,27 @@
             a.status === "已发"
               ? `<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`
               : `<button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">标记已发</button>`;
-        if (ctx === "publish")
-          acts = `<button class="btn primary sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">发布完成 · 归档</button>`;
-        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : ctx === "publish" ? "待发布稿件" : "AI 内容稿件"}</div><div class="cardin"><div class="row1"><span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')">${esc(a.body)}</div>${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}<div class="actions">${acts}</div></div></article>`;
+        if (ctx === "publish") {
+          const busy = Boolean(activePublicationId);
+          acts = `<button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${busy ? "disabled" : ""}>${activePublicationId === a.id ? "同步进行中…" : "一键同步所选平台 →"}</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">确认已公开 · 归档</button>`;
+        }
+        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : ctx === "publish" ? "待发布稿件" : "AI 内容稿件"}</div><div class="cardin"><div class="row1"><span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')">${esc(a.body)}</div>${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "publish" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
       }
       async function loadArticles(render = true) {
         try {
-          articles = (await api("/articles")).articles || [];
+          const [articleData, publicationData] = await Promise.all([
+            api("/articles"),
+            api("/publications"),
+          ]);
+          articles = articleData.articles || [];
+          const storedRuns = {};
+          for (const item of publicationData.publications || []) {
+            if (!storedRuns[item.article_id]) storedRuns[item.article_id] = [];
+            storedRuns[item.article_id].push(item);
+          }
+          for (const [articleId, statuses] of Object.entries(storedRuns)) {
+            if (articleId !== activePublicationId) publishRuns[articleId] = statuses;
+          }
           if (render) {
             renderReview();
             renderLibrary();

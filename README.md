@@ -9,11 +9,11 @@ FlowX 是一套面向中文内容团队的本地优先 AI 内容工作流：抓�
 - 云端工作台：<https://flowx-app.hans-pan007.workers.dev>
 - 产品介绍站：<https://flowx-2hv.pages.dev>
 
-云端工作台运行在 Cloudflare Workers + D1，按「选题、生产·审核、稿库·发布、设置」组织完整工作流。首次访问使用获准的 Google 账号登录；登录会话在同一浏览器中保留 30 天。登录后可按账号配置 DeepSeek、Tavily、博查、Pexels Key、热点来源与赛道。
+云端工作台运行在 Cloudflare Workers + D1，按「选题、生产·审核、稿库·发布、设置」组织完整工作流。首次访问使用获准的 Google 账号登录；登录会话在同一浏览器中保留 30 天。登录后可按账号配置 DeepSeek、Tavily、博查、Pexels Key、热点来源与赛道，并通过 Wechatsync 浏览器扩展一键同步到今日头条、百家号和知乎草稿箱。
 
 ## 为什么是“本地优先”
 
-FlowX 的云端版已经覆盖选题、检索、写稿、配图、质检、稿库和复制归档。自动同步到第三方平台草稿箱仍依赖本机浏览器中的 Wechatsync 扩展与平台登录态，因此这部分继续由本地版承担。
+FlowX 的云端版已经覆盖选题、检索、写稿、配图、质检、稿库和三平台草稿同步。平台登录态仍由本机浏览器中的 Wechatsync 扩展管理，Cookie 不上传到 Cloudflare；Cloudflare 只保存当前 Google 账号的非敏感同步结果。
 
 ## 已有能力
 
@@ -24,6 +24,7 @@ FlowX 的云端版已经覆盖选题、检索、写稿、配图、质检、稿�
 - DeepSeek 写稿、原报道图候选池与 Pexels 兜底
 - 规则 + AI 五维质检，绿/黄/红质量闸与防编造修订红线
 - 稿库、人工编辑、换图、重新质检、发布状态管理
+- 云端一键同步到今日头条、百家号、知乎草稿箱，逐平台展示结果和草稿链接
 - Wechatsync 发布前连接预检、手动同步与 CLI 自动进草稿箱
 - APScheduler 定时流水线与运行记录
 
@@ -51,9 +52,13 @@ python -m unittest discover -s tests -v
 
 ## 自动同步到平台草稿箱
 
-1. 安装并登录 Wechatsync 浏览器扩展。
-2. 安装 Wechatsync CLI，设置 `WECHATSYNC_TOKEN` 和 `WECHATSYNC_CLI_PATH`。
-3. 在稿库点击“自动发布”。FlowX 会先检查 CLI、扩展连接和目标平台登录态；检查通过后才允许同步。
+云端工作台：
+
+1. 在 Chrome 安装 Wechatsync 浏览器扩展，并登录今日头条、百家号和知乎。
+2. 打开 FlowX 的“稿库 · 发布”，点击“检测登录状态”。
+3. 选择目标平台后点击“一键同步所选平台”。FlowX 会显示逐平台进度并保存草稿链接。
+
+本地完整版也可安装 Wechatsync CLI，设置 `WECHATSYNC_TOKEN` 和 `WECHATSYNC_CLI_PATH`，通过本地服务同步。
 
 注意：同步到草稿箱不等于公开发布。FlowX 无法感知用户在平台后台的最终发布动作，因此“标记已发”保持人工确认。
 
