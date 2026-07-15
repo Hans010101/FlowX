@@ -1796,6 +1796,8 @@
       async function oneClickPublish(id) {
         if (activePublicationId)
           return toast("请等待当前稿件同步完成后再开始下一篇");
+        if (!publishBridge())
+          return toast("未检测到文章同步助手，请先安装或启用后刷新页面");
         const article = articles.find((item) => item.id === id);
         if (!article) return toast("稿件不存在");
         const targets = [...selectedPublishPlatforms];
@@ -1803,8 +1805,13 @@
         activePublicationId = id;
         renderPublish();
         try {
-          await ensureArticleCover(article);
-          if (!publishAccounts.length) publishAccounts = await readPublishAccounts();
+          const [, accounts] = await Promise.all([
+            ensureArticleCover(article),
+            publishAccounts.length
+              ? Promise.resolve(publishAccounts)
+              : readPublishAccounts(),
+          ]);
+          publishAccounts = accounts;
           renderPublishConnections();
           const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
           const missing = targets.filter((type) => !accountMap.has(type));
@@ -1826,6 +1833,8 @@
       async function batchPublishSelected() {
         if (activePublicationId || queueResumeBusy)
           return toast("请等待当前稿件同步完成后再批量发布");
+        if (!publishBridge())
+          return toast("未检测到文章同步助手，请先安装或启用后刷新页面");
         const ids = [...selectedArticleIds].filter((id) => {
           const article = articles.find((item) => item.id === id);
           return article && article.status !== "已发" && qinfo(article).cls !== "r";
