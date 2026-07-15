@@ -608,7 +608,9 @@
         font-size: 11px;
       }
       .publish-pill.uploading,
-      .publish-pill.pending {
+      .publish-pill.pending,
+      .publish-pill.running,
+      .publish-pill.queued {
         border-color: #dfc47e;
         background: var(--warn-bg);
         color: var(--warn);
@@ -626,6 +628,48 @@
       .publish-pill a {
         color: inherit;
         font-weight: 700;
+      }
+      .job-list {
+        display: grid;
+        gap: 7px;
+      }
+      .job-row {
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr) 90px auto;
+        align-items: center;
+        gap: 10px;
+        border-top: 1px solid var(--line-soft);
+        padding: 9px 0;
+        font-size: 12px;
+      }
+      .job-row:first-child {
+        border-top: 0;
+      }
+      .job-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+      }
+      .job-state {
+        border-radius: 20px;
+        padding: 2px 8px;
+        text-align: center;
+        background: var(--surface-2);
+        color: var(--ink-soft);
+      }
+      .job-state.running,
+      .job-state.queued {
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+      .job-state.done {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .job-state.failed {
+        background: var(--stop-bg);
+        color: var(--stop);
       }
       .tabs {
         display: flex;
@@ -844,6 +888,12 @@
         .publish-connect {
           grid-template-columns: 1fr;
         }
+        .job-row {
+          grid-template-columns: 70px minmax(0, 1fr) auto;
+        }
+        .job-row .job-actions {
+          grid-column: 2 / -1;
+        }
       }
     </style>
   </head>
@@ -1024,6 +1074,14 @@
                 平台登录态只保存在当前浏览器，FlowX 不读取密码或 Cookie。同步成功后先进入平台草稿箱，请检查排版后再公开发布。
                 <a href="https://chrome.google.com/webstore/detail/%E5%BE%AE%E4%BF%A1%E5%90%8C%E6%AD%A5%E5%8A%A9%E6%89%8B/hchobocdmclopcbnibdnoafilagadion" target="_blank" rel="noreferrer" style="color:var(--brand)">安装文章同步助手</a>
               </div>
+            </div>
+            <div class="panel">
+              <div class="phead">
+                <div class="t"><span class="barmark"></span>发布任务中心</div>
+                <button class="btn ghost sm" onclick="resumePublishQueue(true)">▶ 继续待处理任务</button>
+              </div>
+              <div class="chips" id="publishJobSummary"></div>
+              <div class="job-list" id="publishJobList" style="margin-top:10px"></div>
             </div>
             <div class="cards" id="publishCards"></div>
           </section>
@@ -1223,10 +1281,10 @@
         filter = "all";
       let publishAccounts = [],
         publishRuns = {},
-        activePublicationId = "";
-      const selectedPublishPlatforms = new Set(
-        Object.keys(PUBLISH_PLATFORMS),
-      );
+        publishJobs = [],
+        activePublicationId = "",
+        queueResumeBusy = false;
+      const selectedPublishPlatforms = new Set(["toutiao"]);
       let appSettings = {
         keys: {},
         hotspot: { sources: [], all_sources: [], base_url: "" },
@@ -1510,6 +1568,11 @@
         try {
           publishAccounts = await readPublishAccounts();
           renderPublishConnections();
+          if (
+            $("#publish")?.classList.contains("on") &&
+            publishJobs.some((job) => job.status === "queued")
+          )
+            setTimeout(() => resumePublishQueue(false), 100);
           if (notify) {
             const connected = new Set(publishAccounts.map((a) => a.type));
             const ready = Object.keys(PUBLISH_PLATFORMS).filter((p) =>
@@ -1568,77 +1631,198 @@
           toast(`同步已执行，但结果保存失败：${error.message}`);
         }
       }
-      async function oneClickPublish(id) {
+      async function updatePublishJob(jobId, status, detail = {}) {
+        await api(`/publish-jobs/${jobId}`, {
+          method: "POST",
+          body: JSON.stringify({
+            status,
+            error: detail.error || "",
+            draft_link: detail.draft_link || "",
+          }),
+        });
+        const job = publishJobs.find((item) => item.id === jobId);
+        if (job) Object.assign(job, detail, { status });
+      }
+      async function ensureArticleCover(article, refresh = false) {
+        if (article.cover_url && !refresh) return article.cover_url;
+        const data = await api(`/articles/${article.id}/cover`, {
+          method: "POST",
+          body: "{}",
+        });
+        article.cover_url = data.cover_url;
+        return data.cover_url;
+      }
+      async function autoCover(id, button) {
+        const article = articles.find((item) => item.id === id);
+        if (!article) return;
+        if (button) {
+          button.disabled = true;
+          button.textContent = "采图中…";
+        }
+        try {
+          await ensureArticleCover(article, true);
+          toast("已获取新封面，发布时会自动上传到平台");
+          renderPublish();
+        } catch (error) {
+          toast(error.message);
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = "🖼 自动换封面";
+          }
+        }
+      }
+      async function createPublishJobs(articleId, platforms) {
+        const data = await api("/publish-jobs", {
+          method: "POST",
+          body: JSON.stringify({ article_id: articleId, platforms }),
+        });
+        publishJobs.unshift(...(data.jobs || []));
+        return data.jobs || [];
+      }
+      async function executePublishJobs(article, jobs, accountMap) {
+        const targets = jobs.map((job) => job.platform);
+        activePublicationId = article.id;
+        publishRuns[article.id] = targets.map((platform) => ({
+          platform,
+          status: "pending",
+          error: "",
+          draft_link: "",
+        }));
+        await Promise.all(
+          jobs.map((job) => updatePublishJob(job.id, "running")),
+        );
+        renderPublish();
+        await savePublishResults(article.id, publishRuns[article.id]);
+        publishBridge().addTask(
+          {
+            post: {
+              title: article.title,
+              desc: String(article.body || "").replace(/\s+/g, " ").slice(0, 120),
+              content: articlePublishHtml(article),
+              thumb: safeLink(article.cover_url || ""),
+            },
+            accounts: targets.map((type) => accountMap.get(type)),
+          },
+          async (task) => {
+            const statuses = Array.isArray(task?.accounts)
+              ? task.accounts
+                  .filter((account) => targets.includes(account.type))
+                  .map((account) => ({
+                    platform: account.type,
+                    status: account.status || "uploading",
+                    msg: account.msg || "",
+                    error: account.error || "",
+                    draft_link: account.editResp?.draftLink || "",
+                  }))
+              : [];
+            if (!statuses.length) return;
+            publishRuns[article.id] = statuses;
+            renderPublish();
+            const complete = statuses.every((status) =>
+              ["done", "failed"].includes(status.status),
+            );
+            if (!complete) return;
+            activePublicationId = "";
+            await Promise.all(
+              statuses.map((status) => {
+                const job = jobs.find(
+                  (item) => item.platform === status.platform,
+                );
+                return job
+                  ? updatePublishJob(job.id, status.status, status)
+                  : Promise.resolve();
+              }),
+            );
+            await savePublishResults(article.id, statuses);
+            const failed = statuses.filter(
+              (status) => status.status === "failed",
+            );
+            toast(
+              failed.length
+                ? `${statuses.length - failed.length} 个平台同步成功，${failed.length} 个失败`
+                : `${statuses.length} 个平台已同步到草稿箱`,
+            );
+            renderPublish();
+            setTimeout(() => resumePublishQueue(false), 500);
+          },
+          () => {},
+        );
+      }
+      async function oneClickPublish(id, onlyToutiao = false) {
         if (activePublicationId)
           return toast("请等待当前稿件同步完成后再开始下一篇");
         const article = articles.find((item) => item.id === id);
         if (!article) return toast("稿件不存在");
-        const targets = [...selectedPublishPlatforms];
+        const targets = onlyToutiao ? ["toutiao"] : [...selectedPublishPlatforms];
         if (!targets.length) return toast("请至少选择一个发布平台");
+        activePublicationId = id;
+        renderPublish();
         try {
+          await ensureArticleCover(article);
           publishAccounts = await readPublishAccounts();
           renderPublishConnections();
           const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
           const missing = targets.filter((type) => !accountMap.has(type));
           if (missing.length) {
             const names = missing.map((type) => PUBLISH_PLATFORMS[type].name);
+            activePublicationId = "";
+            renderPublish();
             return toast(`请先登录：${names.join("、")}`);
           }
-          activePublicationId = id;
-          publishRuns[id] = targets.map((platform) => ({
-            platform,
-            status: "pending",
-            error: "",
-            draft_link: "",
-          }));
-          renderPublish();
-          await savePublishResults(id, publishRuns[id]);
-          publishBridge().addTask(
-            {
-              post: {
-                title: article.title,
-                desc: String(article.body || "").replace(/\s+/g, " ").slice(0, 120),
-                content: articlePublishHtml(article),
-                thumb: safeLink(article.cover_url || ""),
-              },
-              accounts: targets.map((type) => accountMap.get(type)),
-            },
-            async (task) => {
-              const statuses = Array.isArray(task?.accounts)
-                ? task.accounts
-                    .filter((account) => targets.includes(account.type))
-                    .map((account) => ({
-                      platform: account.type,
-                      status: account.status || "uploading",
-                      msg: account.msg || "",
-                      error: account.error || "",
-                      draft_link: account.editResp?.draftLink || "",
-                    }))
-                : [];
-              if (!statuses.length) return;
-              publishRuns[id] = statuses;
-              renderPublish();
-              const complete = statuses.every((status) =>
-                ["done", "failed"].includes(status.status),
-              );
-              if (complete) {
-                activePublicationId = "";
-                await savePublishResults(id, statuses);
-                const failed = statuses.filter((status) => status.status === "failed");
-                toast(
-                  failed.length
-                    ? `${statuses.length - failed.length} 个平台同步成功，${failed.length} 个失败`
-                    : `${statuses.length} 个平台已同步到草稿箱`,
-                );
-                renderPublish();
-              }
-            },
-            () => {},
-          );
+          const jobs = await createPublishJobs(id, targets);
+          await executePublishJobs(article, jobs, accountMap);
         } catch (error) {
           activePublicationId = "";
           renderPublish();
           toast(error.message);
+        }
+      }
+      async function retryPublishJob(jobId) {
+        try {
+          await api(`/publish-jobs/${jobId}/retry`, {
+            method: "POST",
+            body: "{}",
+          });
+          await loadArticles();
+          resumePublishQueue(true);
+        } catch (error) {
+          toast(error.message);
+        }
+      }
+      async function resumePublishQueue(notify = false) {
+        if (activePublicationId || queueResumeBusy) {
+          if (notify) toast("已有任务正在执行");
+          return;
+        }
+        const queued = [...publishJobs]
+          .filter((job) => job.status === "queued")
+          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+        if (!queued.length) {
+          if (notify) toast("当前没有待处理发布任务");
+          return;
+        }
+        queueResumeBusy = true;
+        try {
+          publishAccounts = await readPublishAccounts();
+          renderPublishConnections();
+          const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
+          const articleId = queued[0].article_id;
+          const jobs = queued.filter(
+            (job) => job.article_id === articleId && accountMap.has(job.platform),
+          );
+          if (!jobs.length) {
+            if (notify) toast("待处理任务的平台尚未登录");
+            return;
+          }
+          const article = articles.find((item) => item.id === articleId);
+          if (!article) return toast("发布任务对应的稿件已不存在");
+          await ensureArticleCover(article);
+          await executePublishJobs(article, jobs, accountMap);
+        } catch (error) {
+          if (notify) toast(error.message);
+        } finally {
+          queueResumeBusy = false;
         }
       }
       function cardHtml(a, ctx) {
@@ -1660,17 +1844,19 @@
               : `<button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">标记已发</button>`;
         if (ctx === "publish") {
           const busy = Boolean(activePublicationId);
-          acts = `<button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${busy ? "disabled" : ""}>${activePublicationId === a.id ? "同步进行中…" : "一键同步所选平台 →"}</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">确认已公开 · 归档</button>`;
+          acts = `<button class="btn primary sm" onclick="oneClickPublish('${a.id}',true)" ${busy ? "disabled" : ""}>${activePublicationId === a.id ? "同步进行中…" : "一键进入头条草稿箱 →"}</button><button class="btn tool sm" onclick="oneClickPublish('${a.id}')" ${busy ? "disabled" : ""}>同步勾选平台</button><button class="btn ghost sm" onclick="autoCover('${a.id}',this)">🖼 自动换封面</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button><button class="btn ghost sm" onclick="setStatus('${a.id}','已发')">确认已公开 · 归档</button>`;
         }
         return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : ctx === "publish" ? "待发布稿件" : "AI 内容稿件"}</div><div class="cardin"><div class="row1"><span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')">${esc(a.body)}</div>${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "publish" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
       }
       async function loadArticles(render = true) {
         try {
-          const [articleData, publicationData] = await Promise.all([
+          const [articleData, publicationData, jobData] = await Promise.all([
             api("/articles"),
             api("/publications"),
+            api("/publish-jobs"),
           ]);
           articles = articleData.articles || [];
+          publishJobs = jobData.jobs || [];
           const storedRuns = {};
           for (const item of publicationData.publications || []) {
             if (!storedRuns[item.article_id]) storedRuns[item.article_id] = [];
@@ -1684,6 +1870,12 @@
             renderLibrary();
             renderPublish();
           }
+          if (
+            publishBridge() &&
+            $("#publish")?.classList.contains("on") &&
+            publishJobs.some((job) => job.status === "queued")
+          )
+            setTimeout(() => resumePublishQueue(false), 300);
         } catch (e) {
           toast(e.message);
         }
@@ -1725,6 +1917,43 @@
         $("#publishCards").innerHTML =
           list.map((a) => cardHtml(a, "publish")).join("") ||
           '<div class="empty">暂无可发布稿件；红档会被质量闸拦截</div>';
+        renderPublishManager();
+      }
+      function renderPublishManager() {
+        const summary = { queued: 0, running: 0, done: 0, failed: 0 };
+        publishJobs.forEach((job) => {
+          if (job.status in summary) summary[job.status]++;
+        });
+        const labels = {
+          queued: "待处理",
+          running: "执行中",
+          done: "已进草稿",
+          failed: "失败",
+        };
+        $("#publishJobSummary").innerHTML = Object.entries(labels)
+          .map(
+            ([status, label]) =>
+              `<span class="publish-pill ${status}">${label} ${summary[status]}</span>`,
+          )
+          .join("");
+        $("#publishJobList").innerHTML = publishJobs.length
+          ? publishJobs
+              .slice(0, 8)
+              .map((job) => {
+                const platform = PUBLISH_PLATFORMS[job.platform];
+                const article = articles.find(
+                  (item) => item.id === job.article_id,
+                );
+                const link = safeLink(job.draft_link || "");
+                const action = link
+                  ? `<a class="btn ghost sm" href="${esc(link)}" target="_blank" rel="noreferrer">查看草稿</a>`
+                  : job.status === "failed"
+                    ? `<button class="btn ghost sm" onclick="retryPublishJob('${job.id}')">重试</button>`
+                    : `<span class="muted">${esc(job.error || "")}</span>`;
+                return `<div class="job-row"><b>${platform ? platform.name : esc(job.platform)}</b><span class="job-title" title="${esc(article?.title || job.article_id)}">${esc(article?.title || job.article_id)}</span><span class="job-state ${esc(job.status)}">${labels[job.status] || esc(job.status)}</span><span class="job-actions">${action}</span></div>`;
+              })
+              .join("")
+          : '<div class="muted">还没有发布任务；点击稿件的“进入头条草稿箱”即可创建。</div>';
       }
       $$("#tabs .tab").forEach(
         (t) =>

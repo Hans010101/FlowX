@@ -799,7 +799,7 @@ async function searchWithFallback(query, tavilyKey, bochaKey) {
   return { results: first, provider: tavilyKey ? "Tavily" : "无可用搜索源" };
 }
 
-async function pexelsCover(article, pexelsKey, deepseekKey) {
+async function pexelsCover(article, pexelsKey, deepseekKey, page = 1) {
   if (!pexelsKey) return "";
   let query = article.track === "体育" ? "sports competition" : article.title;
   try {
@@ -822,6 +822,7 @@ async function pexelsCover(article, pexelsKey, deepseekKey) {
     url.search = new URLSearchParams({
       query,
       per_page: "1",
+      page: String(Math.max(1, Math.min(10, Number(page) || 1))),
       orientation: "landscape",
     }).toString();
     const response = await fetch(url, {
@@ -1279,6 +1280,93 @@ async function handleApi(request, env, user) {
     await env.DB.batch(statements);
     return json({ ok: true });
   }
+  if (path === "/api/publish-jobs" && request.method === "GET") {
+    await env.DB.prepare(
+      "UPDATE user_publish_jobs SET status='queued',error='上次执行中断，已重新排队',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND status='running' AND updated_at < datetime('now','-10 minutes')",
+    )
+      .bind(email)
+      .run();
+    const rows = await env.DB.prepare(
+      "SELECT id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at FROM user_publish_jobs WHERE owner_email=? ORDER BY created_at DESC LIMIT 200",
+    )
+      .bind(email)
+      .all();
+    return json({ jobs: rows.results || [] });
+  }
+  if (path === "/api/publish-jobs" && request.method === "POST") {
+    const body = await request.json();
+    const articleId = String(body.article_id || "").trim();
+    const allowedPlatforms = new Set(["toutiao", "baijiahao", "zhihu"]);
+    const platforms = [
+      ...new Set(
+        (Array.isArray(body.platforms) ? body.platforms : [])
+          .map(String)
+          .filter((platform) => allowedPlatforms.has(platform)),
+      ),
+    ];
+    if (!/^[a-f0-9]+$/.test(articleId) || !platforms.length)
+      return json({ error: "请选择有效稿件和发布平台" }, 400);
+    const article = await env.DB.prepare(
+      "SELECT id,status,qc_level FROM user_articles WHERE owner_email=? AND id=?",
+    )
+      .bind(email, articleId)
+      .first();
+    if (!article) return json({ error: "稿件不存在" }, 404);
+    if (article.status === "待修复" || article.qc_level === "red")
+      return json({ error: "红档稿件不能进入发布队列" }, 400);
+    const jobs = platforms.map((platform) => ({
+      id: crypto.randomUUID(),
+      article_id: articleId,
+      platform,
+      status: "queued",
+      attempts: 0,
+      error: "",
+      draft_link: "",
+    }));
+    await env.DB.batch(
+      jobs.map((job) =>
+        env.DB.prepare(
+          "INSERT INTO user_publish_jobs(owner_email,id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at) VALUES(?,?,?,?,?,0,'','',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+        ).bind(email, job.id, job.article_id, job.platform, job.status),
+      ),
+    );
+    return json({ ok: true, jobs });
+  }
+  const publishJobMatch = path.match(
+    /^\/api\/publish-jobs\/([0-9a-f-]+)(?:\/(retry))?$/,
+  );
+  if (publishJobMatch && request.method === "POST") {
+    const jobId = publishJobMatch[1];
+    const retry = publishJobMatch[2] === "retry";
+    const job = await env.DB.prepare(
+      "SELECT id FROM user_publish_jobs WHERE owner_email=? AND id=?",
+    )
+      .bind(email, jobId)
+      .first();
+    if (!job) return json({ error: "发布任务不存在" }, 404);
+    if (retry) {
+      await env.DB.prepare(
+        "UPDATE user_publish_jobs SET status='queued',error='',draft_link='',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
+      )
+        .bind(email, jobId)
+        .run();
+      return json({ ok: true });
+    }
+    const body = await request.json();
+    const allowedStatuses = new Set(["queued", "running", "done", "failed"]);
+    const status = String(body.status || "");
+    if (!allowedStatuses.has(status)) return json({ error: "任务状态无效" }, 400);
+    const error = String(body.error || "").slice(0, 500);
+    const draftLink = String(body.draft_link || "").slice(0, 1000);
+    await env.DB.prepare(
+      `UPDATE user_publish_jobs SET status=?,error=?,draft_link=?,
+       attempts=attempts+CASE WHEN ?='running' THEN 1 ELSE 0 END,updated_at=CURRENT_TIMESTAMP
+       WHERE owner_email=? AND id=?`,
+    )
+      .bind(status, error, draftLink, status, email, jobId)
+      .run();
+    return json({ ok: true });
+  }
   const articleMatch = path.match(/^\/api\/articles\/([a-f0-9]+)$/);
   if (articleMatch && request.method === "PUT") {
     const old = await env.DB.prepare(
@@ -1311,6 +1399,32 @@ async function handleApi(request, env, user) {
       .bind(email, articleMatch[1])
       .run();
     return json({ ok: true });
+  }
+  const coverMatch = path.match(/^\/api\/articles\/([a-f0-9]+)\/cover$/);
+  if (coverMatch && request.method === "POST") {
+    const article = await env.DB.prepare(
+      "SELECT id,title,body,track,source,cover_url FROM user_articles WHERE owner_email=? AND id=?",
+    )
+      .bind(email, coverMatch[1])
+      .first();
+    if (!article) return json({ error: "稿件不存在" }, 404);
+    const pexelsKey = await getConfig(env, email, "PEXELS_API_KEY");
+    if (!pexelsKey)
+      return json({ error: "请先在设置中配置并验证 Pexels Key" }, 400);
+    const deepseekKey = await getConfig(env, email, "DEEPSEEK_API_KEY");
+    const coverUrl = await pexelsCover(
+      article,
+      pexelsKey,
+      deepseekKey,
+      1 + Math.floor(Math.random() * 8),
+    );
+    if (!coverUrl) return json({ error: "Pexels 暂未返回可用封面，请重试" }, 502);
+    await env.DB.prepare(
+      "UPDATE user_articles SET cover_url=?,updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
+    )
+      .bind(coverUrl, email, article.id)
+      .run();
+    return json({ ok: true, cover_url: coverUrl });
   }
   const statusMatch = path.match(/^\/api\/articles\/([a-f0-9]+)\/status$/);
   if (statusMatch && request.method === "POST") {

@@ -69,3 +69,24 @@ CREATE TABLE IF NOT EXISTS user_publications (
 
 CREATE INDEX IF NOT EXISTS idx_user_publications_article
   ON user_publications(owner_email, article_id, updated_at DESC);
+
+-- Durable publishing queue. Cloudflare owns job state while the user's
+-- browser/Wechatsync extension performs the platform request locally.
+CREATE TABLE IF NOT EXISTS user_publish_jobs (
+  owner_email TEXT NOT NULL,
+  id TEXT NOT NULL,
+  article_id TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  draft_link TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (owner_email, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_publish_jobs_queue
+  ON user_publish_jobs(owner_email, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_user_publish_jobs_article
+  ON user_publish_jobs(owner_email, article_id, created_at DESC);
