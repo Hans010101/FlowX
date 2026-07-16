@@ -566,6 +566,10 @@
       .body.full {
         max-height: none;
       }
+      .body strong {
+        color: var(--ink);
+        font-weight: 800;
+      }
       .body-copy {
         display: none;
         gap: 8px;
@@ -1321,6 +1325,15 @@
             })[c],
         );
       }
+      function richText(v) {
+        return esc(v).replace(
+          /\*\*([^*\n]{1,200})\*\*/g,
+          "<strong>$1</strong>",
+        );
+      }
+      function plainText(v) {
+        return String(v || "").replace(/\*\*([^*\n]+)\*\*/g, "$1");
+      }
       function toast(s) {
         const t = $("#toast");
         t.textContent = s;
@@ -1676,7 +1689,7 @@
         const paragraphs = String(article.body || "")
           .split(/\n{2,}/)
           .filter((part) => part.trim())
-          .map((part) => `<p>${esc(part).replace(/\n/g, "<br>")}</p>`)
+          .map((part) => `<p>${richText(part).replace(/\n/g, "<br>")}</p>`)
           .join("");
         const cover = safeLink(article.cover_url || "");
         return `${cover ? `<p><img src="${esc(cover)}" alt="" /></p>` : ""}${paragraphs}`;
@@ -1947,7 +1960,7 @@
             ? `<label class="article-select"><input type="checkbox" ${selectedArticleIds.has(a.id) ? "checked" : ""} onchange="toggleArticleSelection('${a.id}',this.checked)">批量选择</label>`
             : "";
         const copyTools = `<div class="body-copy"><button class="btn ghost sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button></div>`;
-        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${esc(a.body)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
+        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${richText(a.body)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
       }
       function toggleArticleSelection(id, checked) {
         checked ? selectedArticleIds.add(id) : selectedArticleIds.delete(id);
@@ -2092,12 +2105,36 @@
           toast(e.message);
         }
       }
-      function copyText(id, field) {
+      async function copyText(id, field) {
         const a = articles.find((x) => x.id === id);
         if (!a) return;
-        navigator.clipboard
-          .writeText(a[field])
-          .then(() => toast(field === "title" ? "标题已复制" : "正文已复制"));
+        try {
+          if (
+            field === "body" &&
+            navigator.clipboard.write &&
+            window.ClipboardItem
+          ) {
+            const html = articlePublishHtml({ ...a, cover_url: "" });
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                "text/plain": new Blob([plainText(a.body)], {
+                  type: "text/plain",
+                }),
+                "text/html": new Blob([html], { type: "text/html" }),
+              }),
+            ]);
+          } else {
+            await navigator.clipboard.writeText(
+              field === "body" ? plainText(a.body) : a[field],
+            );
+          }
+          toast(field === "title" ? "标题已复制" : "正文已复制（保留重点加粗）");
+        } catch {
+          await navigator.clipboard.writeText(
+            field === "body" ? plainText(a.body) : a[field],
+          );
+          toast(field === "title" ? "标题已复制" : "正文已复制");
+        }
       }
       async function loadSettings() {
         try {

@@ -958,21 +958,85 @@ async function deepseek(messages, key, temperature = 0.7) {
   return JSON.parse(raw.replace(/^```json\s*|\s*```$/g, ""));
 }
 
+function stripHighlightMarkup(body) {
+  return String(body || "").replace(/\*\*([^*\n]+)\*\*/g, "$1");
+}
+
+function ensureHighlights(body) {
+  const source = String(body || "").trim();
+  const existing = [...source.matchAll(/\*\*([^*\n]{4,160})\*\*/g)];
+  if (existing.length >= 3 && existing.length <= 6) return source;
+  if (existing.length > 6) {
+    let kept = 0;
+    return source.replace(/\*\*([^*\n]+)\*\*/g, (_, text) =>
+      kept++ < 6 ? `**${text}**` : text,
+    );
+  }
+
+  const plain = stripHighlightMarkup(source);
+  const candidates = [...plain.matchAll(/[^。！？\n]+[。！？]?/g)]
+    .map((match, order) => {
+      const raw = match[0];
+      const leading = raw.length - raw.trimStart().length;
+      const text = raw.trim();
+      if (text.length < 16 || text.length > 120) return null;
+      let score = 0;
+      if (/\d|%|％|万|亿|元|年|月|日/.test(text)) score += 4;
+      if (/核心|关键|重点|最重要|意味着|因此|由此|结论|需要|应当|必须|建议|避免|将会|预计|数据显示|值得注意/.test(text))
+        score += 3;
+      if (/但是|然而|同时|其中|相比|超过|下降|增长|影响|风险|机会/.test(text))
+        score += 2;
+      return { start: match.index + leading, text, score, order };
+    })
+    .filter(Boolean);
+  const desired = Math.min(5, Math.max(3, Math.ceil(candidates.length / 3)));
+  const ranked = [...candidates].sort(
+    (a, b) => b.score - a.score || a.start - b.start,
+  );
+  const picked = [];
+  for (const candidate of ranked) {
+    if (picked.some((item) => Math.abs(item.order - candidate.order) <= 1))
+      continue;
+    picked.push(candidate);
+    if (picked.length >= desired) break;
+  }
+  for (const candidate of ranked) {
+    if (picked.length >= Math.min(3, candidates.length)) break;
+    if (!picked.includes(candidate)) picked.push(candidate);
+  }
+  const selected = picked.sort((a, b) => b.start - a.start);
+  let highlighted = plain;
+  for (const item of selected) {
+    highlighted =
+      highlighted.slice(0, item.start) +
+      `**${item.text}**` +
+      highlighted.slice(item.start + item.text.length);
+  }
+  return highlighted;
+}
+
 async function qualityCheck(article, key) {
   const localProblems = [];
   if (article.title.length > 30)
     localProblems.push(`标题过长（${article.title.length}字）`);
   if (article.title.length < 8)
     localProblems.push(`标题过短（${article.title.length}字）`);
-  const length = article.body.replace(/\s/g, "").length;
+  const length = stripHighlightMarkup(article.body).replace(/\s/g, "").length;
   if (length < 400) localProblems.push(`正文过短（${length}字）`);
   if (length > 1200) localProblems.push(`正文过长（${length}字）`);
+  const highlightCount = [
+    ...String(article.body || "").matchAll(/\*\*([^*\n]{4,160})\*\*/g),
+  ].length;
+  if (highlightCount < 3)
+    localProblems.push(`核心信息加粗不足（当前${highlightCount}处）`);
+  if (highlightCount > 6)
+    localProblems.push(`核心信息加粗过多（当前${highlightCount}处）`);
   const ai = await deepseek(
     [
       {
         role: "system",
         content:
-          "你是中文内容平台资深审稿编辑。只返回JSON。缺来源或未证实的问题只能建议删除、软化或去掉具体数字，禁止建议编造或补充来源。",
+          "你是中文内容平台资深审稿编辑。只返回JSON。正文中的 **...** 是重点加粗标记，不属于事实内容。缺来源或未证实的问题只能建议删除、软化或去掉具体数字，禁止建议编造或补充来源。",
       },
       {
         role: "user",
@@ -1069,11 +1133,11 @@ async function generateOne(item, env, email) {
     [
       {
         role: "system",
-        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。`,
+        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文应适合移动端快速阅读：只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
       },
       {
         role: "user",
-        content: `围绕选题写一篇约600到900字的中文文章。标题完整、有信息量、不超过30字。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
+        content: `围绕选题写一篇约600到900字的中文文章。标题完整、有信息量、不超过30字。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
       },
     ],
     deepseekKey,
@@ -1083,7 +1147,7 @@ async function generateOne(item, env, email) {
     title: String(draft.title || item.title)
       .trim()
       .slice(0, 60),
-    body: String(draft.body || "").trim(),
+    body: ensureHighlights(draft.body),
     track,
     source: item.source || "",
     research_provider: search.provider,
@@ -1465,7 +1529,7 @@ async function handleApi(request, env, user) {
     const body = await request.json();
     const article = {
       title: String(body.title || "").trim(),
-      body: String(body.body || "").trim(),
+      body: ensureHighlights(body.body),
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
@@ -1540,11 +1604,11 @@ async function handleApi(request, env, user) {
         {
           role: "system",
           content:
-            "你是中文内容编辑。只返回JSON。根据问题修订稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。",
+            "你是中文内容编辑。只返回JSON。根据问题修订稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文应适合移动端快速阅读，只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。",
         },
         {
           role: "user",
-          content: `返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
+          content: `完成事实修订并重新整理重点加粗，返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
         },
       ],
       key,
@@ -1552,7 +1616,7 @@ async function handleApi(request, env, user) {
     );
     const article = {
       title: String(revised.title || old.title).trim(),
-      body: String(revised.body || old.body).trim(),
+      body: ensureHighlights(revised.body || old.body),
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
