@@ -6,6 +6,7 @@ const TAVILY_URL = "https://api.tavily.com/search";
 const BOCHA_URL = "https://api.bochaai.com/v1/web-search";
 const PEXELS_URL = "https://api.pexels.com/v1/search";
 const DEFAULT_DAILYHOT_URL = "https://api-hot.imsyy.top";
+const ARTICLE_RETENTION_HOURS = 36;
 
 const HOT_SOURCES = {
   baidu: { name: "百度", direct: true },
@@ -1077,7 +1078,14 @@ async function articleId(title) {
     .join("");
 }
 
-async function saveArticle(env, email, article, qc, oldId = null) {
+async function saveArticle(
+  env,
+  email,
+  article,
+  qc,
+  oldId = null,
+  originalCreatedAt = null,
+) {
   const id = await articleId(article.title);
   const status = qc.level === "red" ? "待修复" : "未发";
   if (oldId && oldId !== id)
@@ -1088,7 +1096,7 @@ async function saveArticle(env, email, article, qc, oldId = null) {
       .run();
   await env.DB.prepare(
     `INSERT INTO user_articles(owner_email,id,title,body,track,source,cover_url,status,qc_score,qc_level,qc_problems,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)
     ON CONFLICT(owner_email,id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,cover_url=excluded.cover_url,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`,
   )
     .bind(
@@ -1103,6 +1111,7 @@ async function saveArticle(env, email, article, qc, oldId = null) {
       qc.score,
       qc.level,
       JSON.stringify(qc.problems),
+      originalCreatedAt,
     )
     .run();
   return {
@@ -1113,6 +1122,48 @@ async function saveArticle(env, email, article, qc, oldId = null) {
     qc_level: qc.level,
     qc_problems: qc.problems,
   };
+}
+
+async function purgeExpiredContent(env) {
+  const cutoff = `-${ARTICLE_RETENTION_HOURS} hours`;
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM user_publications
+       WHERE NOT EXISTS (
+         SELECT 1 FROM user_articles current
+         WHERE current.owner_email=user_publications.owner_email
+           AND current.id=user_publications.article_id
+       ) OR EXISTS (
+         SELECT 1 FROM user_articles a
+         WHERE a.owner_email=user_publications.owner_email
+           AND a.id=user_publications.article_id
+           AND datetime(a.created_at) <= datetime('now', ?)
+       )`,
+    ).bind(cutoff),
+    env.DB.prepare(
+      `DELETE FROM user_publish_jobs
+       WHERE NOT EXISTS (
+         SELECT 1 FROM user_articles current
+         WHERE current.owner_email=user_publish_jobs.owner_email
+           AND current.id=user_publish_jobs.article_id
+       ) OR EXISTS (
+         SELECT 1 FROM user_articles a
+         WHERE a.owner_email=user_publish_jobs.owner_email
+           AND a.id=user_publish_jobs.article_id
+           AND datetime(a.created_at) <= datetime('now', ?)
+       )`,
+    ).bind(cutoff),
+    env.DB.prepare(
+      "DELETE FROM user_articles WHERE datetime(created_at) <= datetime('now', ?)",
+    ).bind(cutoff),
+    env.DB.prepare(
+      "DELETE FROM articles WHERE datetime(created_at) <= datetime('now', ?)",
+    ).bind(cutoff),
+  ]);
+  return results.reduce(
+    (total, result) => total + Number(result?.meta?.changes || 0),
+    0,
+  );
 }
 
 async function generateOne(item, env, email) {
@@ -1162,6 +1213,14 @@ async function handleApi(request, env, user) {
   const url = new URL(request.url);
   const path = url.pathname;
   const email = accountEmail(user);
+  const contentMutation =
+    request.method !== "GET" &&
+    (/^\/api\/articles(?:\/|$)/.test(path) ||
+      path === "/api/revise" ||
+      path === "/api/publications" ||
+      /^\/api\/publish-jobs(?:\/|$)/.test(path));
+  if ((path === "/api/articles" && request.method === "GET") || contentMutation)
+    await purgeExpiredContent(env);
   if (path === "/api/health")
     return json({
       ok: true,
@@ -1338,7 +1397,7 @@ async function handleApi(request, env, user) {
   }
   if (path === "/api/articles" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT * FROM user_articles WHERE owner_email=? ORDER BY created_at DESC LIMIT 500",
+      "SELECT *,datetime(created_at,'+36 hours') AS expires_at FROM user_articles WHERE owner_email=? ORDER BY created_at DESC LIMIT 500",
     )
       .bind(email)
       .all();
@@ -1540,7 +1599,14 @@ async function handleApi(request, env, user) {
     const qc = await qualityCheck(article, key);
     return json({
       ok: true,
-      ...(await saveArticle(env, email, article, qc, articleMatch[1])),
+      ...(await saveArticle(
+        env,
+        email,
+        article,
+        qc,
+        articleMatch[1],
+        old.created_at,
+      )),
     });
   }
   if (articleMatch && request.method === "DELETE") {
@@ -1624,7 +1690,14 @@ async function handleApi(request, env, user) {
     const qc = await qualityCheck(article, key);
     return json({
       ok: true,
-      ...(await saveArticle(env, email, article, qc, old.id)),
+      ...(await saveArticle(
+        env,
+        email,
+        article,
+        qc,
+        old.id,
+        old.created_at,
+      )),
     });
   }
   return json({ error: "Not found" }, 404);
@@ -1650,5 +1723,12 @@ export default {
     } catch (error) {
       return json({ error: error.message || "服务器错误" }, 500);
     }
+  },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      purgeExpiredContent(env).catch((error) =>
+        console.error("FlowX 36-hour retention cleanup failed", error),
+      ),
+    );
   },
 };
