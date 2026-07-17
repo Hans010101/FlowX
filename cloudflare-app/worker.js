@@ -963,6 +963,75 @@ function stripHighlightMarkup(body) {
   return String(body || "").replace(/\*\*([^*\n]+)\*\*/g, "$1");
 }
 
+function stripSectionLabel(text, labelPattern) {
+  return String(text || "")
+    .replace(labelPattern, "")
+    .trim();
+}
+
+function introSplitPoint(text) {
+  if (text.length <= 100) return text.length;
+  let split = 0;
+  for (const match of text.matchAll(/[。！？]/g)) {
+    const position = match.index + 1;
+    if (position > 100) break;
+    if (position >= 40) split = position;
+  }
+  return split || 100;
+}
+
+function ensureArticleStructure(body) {
+  const plain = stripHighlightMarkup(body).trim();
+  if (!plain) return "";
+  const paragraphs = plain
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const first = stripSectionLabel(
+    paragraphs.shift() || "",
+    /^(?:【?导语】?|内容提要|摘要)\s*[：:]?\s*/,
+  );
+  const splitAt = introSplitPoint(first);
+  const intro = first.slice(0, splitAt).trim();
+  const introRemainder = first.slice(splitAt).trim();
+  if (introRemainder) paragraphs.unshift(introRemainder);
+
+  let expert = paragraphs.length ? paragraphs.pop() : "";
+  expert = stripSectionLabel(
+    expert,
+    /^(?:【?专家点评】?|行业点评|专家评论|总结评论|总结与展望)\s*[：:]?\s*/,
+  );
+  const middle = paragraphs.filter(Boolean);
+  return [
+    `导语：${intro}`,
+    ...middle,
+    `专家点评：${expert}`,
+  ]
+    .filter((part) => part.replace(/^(?:导语|专家点评)[：:]\s*/, "").trim())
+    .join("\n\n");
+}
+
+function articleStructure(body) {
+  const paragraphs = stripHighlightMarkup(body)
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const introMatch = (paragraphs[0] || "").match(/^导语[：:]\s*([\s\S]*)$/);
+  const expertMatch = (paragraphs.at(-1) || "").match(
+    /^专家点评[：:]\s*([\s\S]*)$/,
+  );
+  const content = paragraphs
+    .join("")
+    .replace(/^导语[：:]/, "")
+    .replace(/专家点评[：:]/, "")
+    .replace(/\s/g, "");
+  return {
+    length: content.length,
+    intro: String(introMatch?.[1] || "").replace(/\s/g, ""),
+    expert: String(expertMatch?.[1] || "").replace(/\s/g, ""),
+  };
+}
+
 function ensureHighlights(body) {
   const source = String(body || "").trim();
   const existing = [...source.matchAll(/\*\*([^*\n]{4,160})\*\*/g)];
@@ -981,6 +1050,7 @@ function ensureHighlights(body) {
       const leading = raw.length - raw.trimStart().length;
       const text = raw.trim();
       if (text.length < 16 || text.length > 120) return null;
+      if (/^(?:导语|专家点评)[：:]/.test(text)) return null;
       let score = 0;
       if (/\d|%|％|万|亿|元|年|月|日/.test(text)) score += 4;
       if (/核心|关键|重点|最重要|意味着|因此|由此|结论|需要|应当|必须|建议|避免|将会|预计|数据显示|值得注意/.test(text))
@@ -1018,13 +1088,25 @@ function ensureHighlights(body) {
 
 async function qualityCheck(article, key) {
   const localProblems = [];
+  const structureProblems = [];
   if (article.title.length > 30)
     localProblems.push(`标题过长（${article.title.length}字）`);
   if (article.title.length < 8)
     localProblems.push(`标题过短（${article.title.length}字）`);
-  const length = stripHighlightMarkup(article.body).replace(/\s/g, "").length;
-  if (length < 400) localProblems.push(`正文过短（${length}字）`);
-  if (length > 1200) localProblems.push(`正文过长（${length}字）`);
+  const structure = articleStructure(article.body);
+  if (structure.length < 800)
+    structureProblems.push(`正文过短（${structure.length}字，要求800—1500字）`);
+  if (structure.length > 1500)
+    structureProblems.push(`正文过长（${structure.length}字，要求800—1500字）`);
+  if (!structure.intro)
+    structureProblems.push("缺少文章导语");
+  else if (structure.intro.length > 100)
+    structureProblems.push(`导语过长（${structure.intro.length}字，要求100字以内）`);
+  if (!structure.expert)
+    structureProblems.push("缺少文章末尾的专家点评");
+  else if (structure.expert.length < 60)
+    structureProblems.push(`专家点评过短（${structure.expert.length}字）`);
+  localProblems.push(...structureProblems);
   const highlightCount = [
     ...String(article.body || "").matchAll(/\*\*([^*\n]{4,160})\*\*/g),
   ].length;
@@ -1037,7 +1119,7 @@ async function qualityCheck(article, key) {
       {
         role: "system",
         content:
-          "你是中文内容平台资深审稿编辑。只返回JSON。正文中的 **...** 是重点加粗标记，不属于事实内容。缺来源或未证实的问题只能建议删除、软化或去掉具体数字，禁止建议编造或补充来源。",
+          "你是中文内容平台资深审稿编辑。只返回JSON。正文中的 **...** 是重点加粗标记，不属于事实内容。检查首段导语是否在100字内概括核心信息；检查末段专家点评是否基于正文事实给出行业判断、影响分析或趋势预测，并具有独特视角。缺来源或未证实的问题只能建议删除、软化或去掉具体数字，禁止建议编造或补充来源。",
       },
       {
         role: "user",
@@ -1047,13 +1129,16 @@ async function qualityCheck(article, key) {
     key,
     0.2,
   );
-  const score = Math.max(
+  const adjustedScore = Math.max(
     0,
     Math.min(
       100,
       Math.round(Number(ai.score) || 75) - localProblems.length * 5,
     ),
   );
+  const score = structureProblems.length
+    ? Math.min(59, adjustedScore)
+    : adjustedScore;
   const problems = [
     ...new Set([
       ...localProblems,
@@ -1184,11 +1269,11 @@ async function generateOne(item, env, email) {
     [
       {
         role: "system",
-        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文应适合移动端快速阅读：只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
+        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500字，建议控制在900到1300字。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段必须以“专家点评：”开头，从${track}行业专家角度给出总结评论、影响判断或趋势预测；推断必须明确表达为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
       },
       {
         role: "user",
-        content: `围绕选题写一篇约600到900字的中文文章。标题完整、有信息量、不超过30字。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
+        content: `围绕选题写一篇800到1500字的中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、事实与分析正文、专家点评。导语提前呈现核心内容；专家点评提炼热点背后的行业逻辑和独特视角。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
       },
     ],
     deepseekKey,
@@ -1198,7 +1283,7 @@ async function generateOne(item, env, email) {
     title: String(draft.title || item.title)
       .trim()
       .slice(0, 60),
-    body: ensureHighlights(draft.body),
+    body: ensureHighlights(ensureArticleStructure(draft.body)),
     track,
     source: item.source || "",
     research_provider: search.provider,
@@ -1588,7 +1673,7 @@ async function handleApi(request, env, user) {
     const body = await request.json();
     const article = {
       title: String(body.title || "").trim(),
-      body: ensureHighlights(body.body),
+      body: ensureHighlights(ensureArticleStructure(body.body)),
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
@@ -1670,11 +1755,11 @@ async function handleApi(request, env, user) {
         {
           role: "system",
           content:
-            "你是中文内容编辑。只返回JSON。根据问题修订稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文应适合移动端快速阅读，只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。",
+            `你是中文内容编辑。只返回JSON。根据问题重写稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文净字数必须为800到1500字。首段必须以“导语：”开头，在100字以内提前说明核心内容。末段必须以“专家点评：”开头，从${old.track || "相关"}行业专家角度给出总结、影响判断或趋势预测；推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。`,
         },
         {
           role: "user",
-          content: `完成事实修订并重新整理重点加粗，返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
+          content: `完成事实修订，将全文调整为800到1500字，并重新整理导语、正文、专家点评和重点加粗。返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
         },
       ],
       key,
@@ -1682,7 +1767,7 @@ async function handleApi(request, env, user) {
     );
     const article = {
       title: String(revised.title || old.title).trim(),
-      body: ensureHighlights(revised.body || old.body),
+      body: ensureHighlights(ensureArticleStructure(revised.body || old.body)),
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",

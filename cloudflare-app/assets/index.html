@@ -570,6 +570,15 @@
         color: var(--ink);
         font-weight: 800;
       }
+      .body .article-section-label {
+        display: inline-block;
+        color: var(--brand-deep);
+        font-weight: 800;
+        margin-right: 4px;
+      }
+      .body .article-section-label.expert {
+        color: #76501f;
+      }
       .body-copy {
         display: none;
         gap: 8px;
@@ -1328,10 +1337,16 @@
         );
       }
       function richText(v) {
-        return esc(v).replace(
-          /\*\*([^*\n]{1,200})\*\*/g,
-          "<strong>$1</strong>",
-        );
+        return esc(v)
+          .replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>")
+          .replace(
+            /(^|\n)(导语[：:])/g,
+            '$1<strong class="article-section-label lead">$2</strong>',
+          )
+          .replace(
+            /(^|\n)(专家点评[：:])/g,
+            '$1<strong class="article-section-label expert">$2</strong>',
+          );
       }
       function plainText(v) {
         return String(v || "").replace(/\*\*([^*\n]+)\*\*/g, "$1");
