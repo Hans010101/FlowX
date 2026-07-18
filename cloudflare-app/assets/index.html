@@ -584,11 +584,6 @@
         border-radius: 10px;
         background: var(--surface-2);
       }
-      .article-inline-figure figcaption {
-        margin-top: 5px;
-        color: var(--ink-faint);
-        font-size: 11px;
-      }
       .body strong {
         color: var(--ink);
         font-weight: 800;
@@ -1790,7 +1785,7 @@
             const paragraph = `<p>${richText(part).replace(/\n/g, "<br>")}</p>`;
             const image = placements.get(index);
             if (!image) return paragraph;
-            return `${paragraph}<figure class="article-inline-figure"><img class="article-inline-image" src="${esc(image.url)}" alt="${esc(article.title)}主题配图${image.index + 2}" loading="lazy" /><figcaption>主题配图 ${image.index + 2}</figcaption></figure>`;
+            return `${paragraph}<figure class="article-inline-figure"><img class="article-inline-image" src="${esc(image.url)}" alt="" loading="lazy" /></figure>`;
           })
           .join("");
       }
@@ -1798,7 +1793,7 @@
         const images = articleImages(article);
         const cover = includeCover ? images[0] || "" : "";
         const coverHtml = cover
-          ? `<p><img src="${esc(cover)}" alt="${esc(article.title)}封面配图" /></p>`
+          ? `<p><img src="${esc(cover)}" alt="" /></p>`
           : "";
         return `${coverHtml}${articleBodyHtml(article, images.slice(1))}`;
       }
