@@ -829,41 +829,192 @@ async function searchWithFallback(query, tavilyKey, bochaKey) {
   return { results: first, provider: tavilyKey ? "Tavily" : "无可用搜索源" };
 }
 
-async function pexelsCover(article, pexelsKey, deepseekKey, page = 1) {
-  if (!pexelsKey) return "";
-  let query = article.track === "体育" ? "sports competition" : article.title;
+function normalizeImageUrls(value, coverUrl = "") {
+  let values = Array.isArray(value) ? value : [];
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      values = Array.isArray(parsed) ? parsed : [value];
+    } catch {
+      values = [value];
+    }
+  }
+  const unique = [];
+  for (const candidate of [coverUrl, ...values]) {
+    try {
+      const url = new URL(String(candidate || "").trim());
+      if (url.protocol !== "https:" || unique.includes(url.href)) continue;
+      unique.push(url.href);
+      if (unique.length === 3) break;
+    } catch {}
+  }
+  return unique;
+}
+
+function normalizeImageQueries(value) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((query) => String(query || "").trim().replace(/\s+/g, " "))
+        .filter((query) => query.length >= 3 && query.length <= 80),
+    ),
+  ].slice(0, 3);
+}
+
+async function imageSearchQueries(article, deepseekKey) {
+  const supplied = normalizeImageQueries(article.image_queries);
+  if (supplied.length >= 2) return supplied;
+  let queries = supplied;
+  if (deepseekKey) {
+    try {
+      const result = await deepseek(
+        [
+          {
+            role: "system",
+            content:
+              "Return JSON only. Create exactly 3 specific English Pexels stock-photo searches for the article. Each query must use 2-6 concrete visual terms and stay faithful to the event, named subject, location and industry in the supplied text. Cover three distinct visual angles. If an exact news image is unlikely, use a truthful scene-level representation of the same topic. Never use generic filler such as news, background, abstract, business or technology alone. Return {\"queries\":[\"\", \"\", \"\"]}.",
+          },
+          {
+            role: "user",
+            content:
+              "Title: " +
+              String(article.title || "") +
+              "\nTrack: " +
+              String(article.track || "") +
+              "\nArticle excerpt: " +
+              stripHighlightMarkup(article.body).slice(0, 1200),
+          },
+        ],
+        deepseekKey,
+        0.2,
+      );
+      queries = normalizeImageQueries(result.queries);
+    } catch {}
+  }
+  if (queries.length) return queries;
+  return normalizeImageQueries([
+    article.track === "体育"
+      ? String(article.title || "") + " sports competition"
+      : String(article.title || ""),
+  ]);
+}
+
+async function pexelsSearch(query, pexelsKey, page = 1) {
+  try {
+    const url = new URL(PEXELS_URL);
+    url.search = new URLSearchParams({
+      query,
+      per_page: "5",
+      page: String(Math.max(1, Math.min(3, Number(page) || 1))),
+      orientation: "landscape",
+    }).toString();
+    const response = await fetch(url, {
+      headers: { Authorization: pexelsKey },
+    });
+    if (!response.ok) return [];
+    return ((await response.json())?.photos || []).map((photo) => ({
+      id: String(photo.id || ""),
+      query,
+      alt: String(photo.alt || "").slice(0, 240),
+      url:
+        photo?.src?.large2x ||
+        photo?.src?.large ||
+        photo?.src?.medium ||
+        "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function rankPexelsCandidates(article, candidates, deepseekKey) {
+  if (!deepseekKey || candidates.length < 2) return [];
   try {
     const result = await deepseek(
       [
         {
           role: "system",
           content:
-            'Return JSON only. Convert the Chinese headline into 1-3 concrete English nouns suitable for a stock photo search. Return {"query":""}.',
+            "Return JSON only. Select 2-3 Pexels photos that are clearly relevant to the supplied Chinese article. Judge using each search query and photo alt text. Prefer different visual angles tied to the event subject, place or industry. Reject generic filler, misleading people/places and any image that could imply an unsupported exact event. If fewer than 2 are genuinely relevant, return only the relevant ones. Return {\"selected_ids\":[\"\"]}.",
         },
-        { role: "user", content: article.title },
+        {
+          role: "user",
+          content:
+            "Article title: " +
+            String(article.title || "") +
+            "\nTrack: " +
+            String(article.track || "") +
+            "\nArticle excerpt: " +
+            stripHighlightMarkup(article.body).slice(0, 900) +
+            "\nCandidates: " +
+            JSON.stringify(
+              candidates.map(({ id, query, alt }) => ({ id, query, alt })),
+            ),
+        },
       ],
       deepseekKey,
-      0.2,
+      0.1,
     );
-    query = String(result.query || query).trim();
-  } catch {}
-  try {
-    const url = new URL(PEXELS_URL);
-    url.search = new URLSearchParams({
-      query,
-      per_page: "1",
-      page: String(Math.max(1, Math.min(10, Number(page) || 1))),
-      orientation: "landscape",
-    }).toString();
-    const response = await fetch(url, {
-      headers: { Authorization: pexelsKey },
-    });
-    if (!response.ok) return "";
-    const photo = (await response.json())?.photos?.[0];
-    return photo?.src?.large || photo?.src?.medium || photo?.src?.large2x || "";
+    const selectedIds = new Set(
+      (Array.isArray(result.selected_ids) ? result.selected_ids : [])
+        .map(String)
+        .slice(0, 3),
+    );
+    return candidates.filter((candidate) => selectedIds.has(candidate.id));
   } catch {
-    return "";
+    return [];
   }
+}
+
+async function pexelsImages(article, pexelsKey, deepseekKey, page = 1) {
+  if (!pexelsKey) return normalizeImageUrls([], article.cover_url);
+  const queries = await imageSearchQueries(article, deepseekKey);
+  const groups = await Promise.all(
+    queries.map((query) => pexelsSearch(query, pexelsKey, page)),
+  );
+  const candidates = [];
+  const candidateIds = new Set();
+  for (const photo of groups.flatMap((group) => group.slice(0, 3))) {
+    if (!photo.url || candidateIds.has(photo.id)) continue;
+    candidates.push(photo);
+    candidateIds.add(photo.id);
+  }
+  const ranked = await rankPexelsCandidates(
+    article,
+    candidates,
+    deepseekKey,
+  );
+  if (ranked.length)
+    return normalizeImageUrls(ranked.map((photo) => photo.url));
+
+  const selected = [];
+  const usedIds = new Set();
+  for (const group of groups) {
+    const photo = group.find(
+      (candidate) =>
+        candidate.url &&
+        !usedIds.has(candidate.id) &&
+        !selected.includes(candidate.url),
+    );
+    if (!photo) continue;
+    selected.push(photo.url);
+    usedIds.add(photo.id);
+  }
+  if (selected.length < 3) {
+    for (const photo of groups.flat()) {
+      if (
+        !photo.url ||
+        usedIds.has(photo.id) ||
+        selected.includes(photo.url)
+      )
+        continue;
+      selected.push(photo.url);
+      usedIds.add(photo.id);
+      if (selected.length === 3) break;
+    }
+  }
+  return normalizeImageUrls(selected);
 }
 
 const API_KEY_CONFIG = {
@@ -1183,6 +1334,11 @@ async function saveArticle(
 ) {
   const id = await articleId(article.title);
   const status = qc.level === "red" ? "待修复" : "未发";
+  article.image_urls = normalizeImageUrls(
+    article.image_urls,
+    article.cover_url,
+  );
+  article.cover_url = article.image_urls[0] || "";
   if (oldId && oldId !== id)
     await env.DB.prepare(
       "DELETE FROM user_articles WHERE owner_email=? AND id=?",
@@ -1190,9 +1346,9 @@ async function saveArticle(
       .bind(email, oldId)
       .run();
   await env.DB.prepare(
-    `INSERT INTO user_articles(owner_email,id,title,body,track,source,cover_url,status,qc_score,qc_level,qc_problems,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)
-    ON CONFLICT(owner_email,id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,cover_url=excluded.cover_url,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`,
+    `INSERT INTO user_articles(owner_email,id,title,body,track,source,cover_url,image_urls,status,qc_score,qc_level,qc_problems,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)
+    ON CONFLICT(owner_email,id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,cover_url=excluded.cover_url,image_urls=excluded.image_urls,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`,
   )
     .bind(
       email,
@@ -1202,6 +1358,7 @@ async function saveArticle(
       article.track || "",
       article.source || "",
       article.cover_url || "",
+      JSON.stringify(normalizeImageUrls(article.image_urls, article.cover_url)),
       status,
       qc.score,
       qc.level,
@@ -1283,7 +1440,7 @@ async function generateOne(item, env, email) {
       },
       {
         role: "user",
-        content: `围绕选题写一篇800到1500字的中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
+        content: `围绕选题写一篇800到1500字的中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。另给出3条用于 Pexels 配图检索的具体英文短语，每条2到6个可视觉化词语，必须分别紧扣事件主体、地点或行业场景，不得使用与主题无关的泛化词。返回 {\"title\":\"\",\"body\":\"\",\"image_queries\":[\"\",\"\",\"\"]}。\n选题：${item.title}\n${material}`,
       },
     ],
     deepseekKey,
@@ -1297,10 +1454,12 @@ async function generateOne(item, env, email) {
     track,
     source: item.source || "",
     research_provider: search.provider,
+    image_queries: normalizeImageQueries(draft.image_queries),
   };
   if (article.body.length < 50) throw new Error("模型返回正文过短");
   const qc = await qualityCheck(article, deepseekKey);
-  article.cover_url = await pexelsCover(article, pexelsKey, deepseekKey);
+  article.image_urls = await pexelsImages(article, pexelsKey, deepseekKey);
+  article.cover_url = article.image_urls[0] || "";
   return saveArticle(env, email, article, qc);
 }
 
@@ -1496,7 +1655,15 @@ async function handleApi(request, env, user) {
     )
       .bind(email)
       .all();
-    return json({ articles: rows.results || [] });
+    return json({
+      articles: (rows.results || []).map((article) => ({
+        ...article,
+        image_urls: normalizeImageUrls(
+          article.image_urls,
+          article.cover_url,
+        ),
+      })),
+    });
   }
   if (path === "/api/publications" && request.method === "GET") {
     const rows = await env.DB.prepare(
@@ -1687,6 +1854,7 @@ async function handleApi(request, env, user) {
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
+      image_urls: normalizeImageUrls(old.image_urls, old.cover_url),
     };
     if (article.title.length < 4 || article.body.length < 50)
       return json({ error: "标题至少4字，正文至少50字" }, 400);
@@ -1712,10 +1880,12 @@ async function handleApi(request, env, user) {
       .run();
     return json({ ok: true });
   }
-  const coverMatch = path.match(/^\/api\/articles\/([a-f0-9]+)\/cover$/);
+  const coverMatch = path.match(
+    /^\/api\/articles\/([a-f0-9]+)\/(?:images|cover)$/,
+  );
   if (coverMatch && request.method === "POST") {
     const article = await env.DB.prepare(
-      "SELECT id,title,body,track,source,cover_url FROM user_articles WHERE owner_email=? AND id=?",
+      "SELECT id,title,body,track,source,cover_url,image_urls FROM user_articles WHERE owner_email=? AND id=?",
     )
       .bind(email, coverMatch[1])
       .first();
@@ -1724,19 +1894,21 @@ async function handleApi(request, env, user) {
     if (!pexelsKey)
       return json({ error: "请先在设置中配置并验证 Pexels Key" }, 400);
     const deepseekKey = await getConfig(env, email, "DEEPSEEK_API_KEY");
-    const coverUrl = await pexelsCover(
+    const imageUrls = await pexelsImages(
       article,
       pexelsKey,
       deepseekKey,
-      1 + Math.floor(Math.random() * 8),
+      1 + Math.floor(Math.random() * 3),
     );
-    if (!coverUrl) return json({ error: "Pexels 暂未返回可用封面，请重试" }, 502);
+    if (!imageUrls.length)
+      return json({ error: "Pexels 暂未返回与主题相关的配图，请重试" }, 502);
+    const coverUrl = imageUrls[0];
     await env.DB.prepare(
-      "UPDATE user_articles SET cover_url=?,updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
+      "UPDATE user_articles SET cover_url=?,image_urls=?,updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
     )
-      .bind(coverUrl, email, article.id)
+      .bind(coverUrl, JSON.stringify(imageUrls), email, article.id)
       .run();
-    return json({ ok: true, cover_url: coverUrl });
+    return json({ ok: true, cover_url: coverUrl, image_urls: imageUrls });
   }
   const statusMatch = path.match(/^\/api\/articles\/([a-f0-9]+)\/status$/);
   if (statusMatch && request.method === "POST") {
@@ -1781,6 +1953,7 @@ async function handleApi(request, env, user) {
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
+      image_urls: normalizeImageUrls(old.image_urls, old.cover_url),
     };
     const qc = await qualityCheck(article, key);
     return json({

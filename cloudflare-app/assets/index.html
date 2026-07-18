@@ -566,6 +566,29 @@
       .body.full {
         max-height: none;
       }
+      .body p {
+        margin: 0 0 12px;
+        white-space: pre-wrap;
+      }
+      .body p:last-child {
+        margin-bottom: 0;
+      }
+      .article-inline-figure {
+        margin: 15px 0;
+      }
+      .article-inline-image {
+        display: block;
+        width: 100%;
+        max-height: 420px;
+        object-fit: cover;
+        border-radius: 10px;
+        background: var(--surface-2);
+      }
+      .article-inline-figure figcaption {
+        margin-top: 5px;
+        color: var(--ink-faint);
+        font-size: 11px;
+      }
       .body strong {
         color: var(--ink);
         font-weight: 800;
@@ -1073,7 +1096,7 @@
               <div>
                 <p class="eyebrow">Step 02 · Library & Publish</p>
                 <h1>稿库与发布</h1>
-                <p>统一管理稿件、封面、发布平台与自动发布任务</p>
+                <p>统一管理稿件、2–3 张主题配图、发布平台与自动发布任务</p>
               </div>
               <div class="actions">
                 <span class="chip">⏱ 稿件仅保留 36 小时</span>
@@ -1140,7 +1163,7 @@
               <h2>🔎 搜索与生成</h2>
               <p class="sub">
                 Tavily 优先搜索，博查在其不可用时自动兜底，Pexels
-                提供文章配图，DeepSeek 负责写作、质检和定向优化。所有 Key
+                提供与时事主题相关的封面及正文配图，DeepSeek 负责写作、质检和定向优化。所有 Key
                 只绑定当前 Google 邮箱，永不回显。
               </p>
               <div class="chain">
@@ -1313,9 +1336,11 @@
         publishJobs = [],
         activePublicationId = "",
         queueResumeBusy = false,
+        imageBackfillBusy = false,
         expiryTimer = null;
       const selectedPublishPlatforms = new Set(["toutiao"]);
       const selectedArticleIds = new Set();
+      const imageBackfillAttempted = new Set();
       let appSettings = {
         keys: {},
         hotspot: { sources: [], all_sources: [], base_url: "" },
@@ -1726,14 +1751,56 @@
           })
           .join("")}</div>`;
       }
-      function articlePublishHtml(article) {
+      function articleImages(article) {
+        let values = Array.isArray(article.image_urls)
+          ? article.image_urls
+          : [];
+        if (typeof article.image_urls === "string" && article.image_urls.trim()) {
+          try {
+            const parsed = JSON.parse(article.image_urls);
+            values = Array.isArray(parsed) ? parsed : values;
+          } catch {}
+        }
+        const unique = [];
+        for (const value of [article.cover_url, ...values]) {
+          const url = safeLink(value || "");
+          if (!url || unique.includes(url)) continue;
+          unique.push(url);
+          if (unique.length === 3) break;
+        }
+        return unique;
+      }
+      function articleBodyHtml(article, inlineImages = null) {
         const paragraphs = String(article.body || "")
           .split(/\n{2,}/)
-          .filter((part) => part.trim())
-          .map((part) => `<p>${richText(part).replace(/\n/g, "<br>")}</p>`)
+          .filter((part) => part.trim());
+        const images = Array.isArray(inlineImages)
+          ? inlineImages.slice(0, 2)
+          : articleImages(article).slice(1);
+        if (!paragraphs.length) return "";
+        const placements = new Map();
+        images.forEach((url, index) => {
+          const desired = Math.floor(((index + 1) * paragraphs.length) / (images.length + 1)) - 1;
+          let after = Math.max(0, Math.min(paragraphs.length - 2, desired));
+          while (placements.has(after) && after < paragraphs.length - 2) after++;
+          placements.set(after, { url, index });
+        });
+        return paragraphs
+          .map((part, index) => {
+            const paragraph = `<p>${richText(part).replace(/\n/g, "<br>")}</p>`;
+            const image = placements.get(index);
+            if (!image) return paragraph;
+            return `${paragraph}<figure class="article-inline-figure"><img class="article-inline-image" src="${esc(image.url)}" alt="${esc(article.title)}主题配图${image.index + 2}" loading="lazy" /><figcaption>主题配图 ${image.index + 2}</figcaption></figure>`;
+          })
           .join("");
-        const cover = safeLink(article.cover_url || "");
-        return `${cover ? `<p><img src="${esc(cover)}" alt="" /></p>` : ""}${paragraphs}`;
+      }
+      function articlePublishHtml(article, includeCover = true) {
+        const images = articleImages(article);
+        const cover = includeCover ? images[0] || "" : "";
+        const coverHtml = cover
+          ? `<p><img src="${esc(cover)}" alt="${esc(article.title)}封面配图" /></p>`
+          : "";
+        return `${coverHtml}${articleBodyHtml(article, images.slice(1))}`;
       }
       async function savePublishResults(articleId, results) {
         try {
@@ -1757,16 +1824,18 @@
         const job = publishJobs.find((item) => item.id === jobId);
         if (job) Object.assign(job, detail, { status });
       }
-      async function ensureArticleCover(article, refresh = false) {
-        if (article.cover_url && !refresh) return article.cover_url;
-        const data = await api(`/articles/${article.id}/cover`, {
+      async function ensureArticleImages(article, refresh = false) {
+        if (articleImages(article).length >= 2 && !refresh)
+          return articleImages(article);
+        const data = await api(`/articles/${article.id}/images`, {
           method: "POST",
           body: "{}",
         });
         article.cover_url = data.cover_url;
-        return data.cover_url;
+        article.image_urls = data.image_urls || [data.cover_url].filter(Boolean);
+        return articleImages(article);
       }
-      async function autoCover(id, button) {
+      async function autoImages(id, button) {
         const article = articles.find((item) => item.id === id);
         if (!article) return;
         if (button) {
@@ -1774,17 +1843,50 @@
           button.textContent = "采图中…";
         }
         try {
-          await ensureArticleCover(article, true);
-          toast("已获取新封面，发布时会自动上传到平台");
+          const images = await ensureArticleImages(article, true);
+          toast(`已重新匹配 ${images.length} 张主题配图`);
           renderPublish();
         } catch (error) {
           toast(error.message);
         } finally {
           if (button) {
             button.disabled = false;
-            button.textContent = "🖼 自动换封面";
+            button.textContent = "🖼 智能换配图";
           }
         }
+      }
+      async function backfillArticleImages() {
+        if (
+          imageBackfillBusy ||
+          !appSettings.keys?.pexels ||
+          !appSettings.keys?.deepseek
+        )
+          return;
+        const pending = articles
+          .filter(
+            (article) =>
+              articleImages(article).length < 2 &&
+              !imageBackfillAttempted.has(article.id),
+          )
+          .slice(0, 20);
+        if (!pending.length) return;
+        imageBackfillBusy = true;
+        pending.forEach((article) => imageBackfillAttempted.add(article.id));
+        let cursor = 0;
+        let updated = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(2, pending.length) }, async () => {
+            while (cursor < pending.length) {
+              const article = pending[cursor++];
+              try {
+                await ensureArticleImages(article);
+                updated++;
+              } catch {}
+            }
+          }),
+        );
+        imageBackfillBusy = false;
+        if (updated) renderLibrary();
       }
       async function createPublishJobs(articleIds, platforms) {
         const ids = Array.isArray(articleIds) ? articleIds : [articleIds];
@@ -1881,7 +1983,7 @@
         renderPublish();
         try {
           const [, accounts] = await Promise.all([
-            ensureArticleCover(article),
+            ensureArticleImages(article),
             publishAccounts.length
               ? Promise.resolve(publishAccounts)
               : readPublishAccounts(),
@@ -1974,7 +2076,7 @@
           }
           const article = articles.find((item) => item.id === articleId);
           if (!article) return toast("发布任务对应的稿件已不存在");
-          await ensureArticleCover(article);
+          await ensureArticleImages(article);
           await executePublishJobs(article, jobs, accountMap);
         } catch (error) {
           if (notify) toast(error.message);
@@ -1990,7 +2092,7 @@
           : "";
         let acts = "";
         if (ctx === "library") {
-          acts = `<button class="btn ghost sm" onclick="revise('${a.id}',this)">稿件修改</button><button class="btn ghost sm" onclick="autoCover('${a.id}',this)">🖼 自动换封面</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : "一键发布"}</button>`;
+          acts = `<button class="btn ghost sm" onclick="revise('${a.id}',this)">稿件修改</button><button class="btn ghost sm" onclick="autoImages('${a.id}',this)">🖼 智能换配图</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : "一键发布"}</button>`;
           acts +=
             a.status === "已发"
               ? `<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`
@@ -2001,7 +2103,7 @@
             ? `<label class="article-select"><input type="checkbox" ${selectedArticleIds.has(a.id) ? "checked" : ""} onchange="toggleArticleSelection('${a.id}',this.checked)">批量选择</label>`
             : "";
         const copyTools = `<div class="body-copy"><button class="btn ghost sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button></div>`;
-        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="muted" title="自生成起满36小时自动删除">⏱ ${retentionText(a)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${richText(a.body)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
+        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="muted">配图 ${articleImages(a).length}/3</span><span class="muted" title="自生成起满36小时自动删除">⏱ ${retentionText(a)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${articleBodyHtml(a)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
       }
       function toggleArticleSelection(id, checked) {
         checked ? selectedArticleIds.add(id) : selectedArticleIds.delete(id);
@@ -2040,6 +2142,7 @@
           if (render) {
             renderLibrary();
           }
+          setTimeout(() => backfillArticleImages(), 100);
           if (
             publishBridge() &&
             $("#library")?.classList.contains("on") &&
@@ -2156,7 +2259,7 @@
             navigator.clipboard.write &&
             window.ClipboardItem
           ) {
-            const html = articlePublishHtml({ ...a, cover_url: "" });
+            const html = articlePublishHtml(a, false);
             await navigator.clipboard.write([
               new ClipboardItem({
                 "text/plain": new Blob([plainText(a.body)], {
@@ -2190,6 +2293,7 @@
           $("#dailyhotBase").value = s.hotspot.base_url || "";
           renderSources();
           renderTracks();
+          setTimeout(() => backfillArticleImages(), 100);
           $("#regionChip").textContent = `当前边缘节点 ${h.region}`;
         } catch (e) {
           toast(e.message);
