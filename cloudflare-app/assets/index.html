@@ -576,7 +576,7 @@
         font-weight: 800;
         margin-right: 4px;
       }
-      .body .article-section-label.expert {
+      .body .article-section-label.perspective {
         color: #76501f;
       }
       .body-copy {
@@ -1344,8 +1344,8 @@
             '$1<strong class="article-section-label lead">$2</strong>',
           )
           .replace(
-            /(^|\n)(专家点评[：:])/g,
-            '$1<strong class="article-section-label expert">$2</strong>',
+            /(^|\n)((?:客观看来|长远来看|长远看来|在我看来|更值得关注的是)[，,:：])/g,
+            '$1<strong class="article-section-label perspective">$2</strong>',
           );
       }
       function plainText(v) {
