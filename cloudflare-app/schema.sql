@@ -92,6 +92,9 @@ CREATE INDEX IF NOT EXISTS idx_user_publish_jobs_queue
   ON user_publish_jobs(owner_email, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_user_publish_jobs_article
   ON user_publish_jobs(owner_email, article_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_publish_jobs_active_unique
+  ON user_publish_jobs(owner_email, article_id, platform)
+  WHERE status IN ('queued', 'running');
 
 -- Topics that should no longer occupy the discovery list. Successful
 -- generation and explicit user deletion both write here, scoped by account.

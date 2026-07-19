@@ -624,6 +624,18 @@
       .library-batch {
         z-index: 5;
       }
+      .library-batch-copy {
+        display: grid;
+        gap: 3px;
+      }
+      .library-batch-copy small {
+        color: #d8cec5;
+        font-weight: 500;
+      }
+      .library-batch .btn:disabled {
+        cursor: wait;
+        opacity: 0.72;
+      }
       .library-batch[hidden] {
         display: none;
       }
@@ -739,6 +751,15 @@
       .job-list {
         display: grid;
         gap: 7px;
+      }
+      .publish-queue-notice {
+        margin-top: 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-2);
+        color: var(--ink-soft);
+        padding: 8px 10px;
+        font-size: 12px;
       }
       .job-row {
         display: grid;
@@ -1126,6 +1147,7 @@
                 <button class="btn ghost sm" onclick="resumePublishQueue(true)">▶ 继续待处理任务</button>
               </div>
               <div class="chips" id="publishJobSummary"></div>
+              <div class="publish-queue-notice" id="publishQueueNotice" role="status" aria-live="polite" hidden></div>
               <div class="job-list" id="publishJobList" style="margin-top:10px"></div>
             </div>
             <div class="tabs" id="tabs">
@@ -1141,8 +1163,8 @@
             </div>
             <div class="cards" id="libraryCards"></div>
             <div class="selbar library-batch" id="libraryBatchBar" hidden>
-              <b id="batchN">已选 0 篇</b>
-              <button class="btn" onclick="batchPublishSelected()">批量发布 →</button>
+              <span class="library-batch-copy"><b id="batchN">已选 0 篇</b><small id="batchHint">确认后将按稿件顺序逐篇同步</small></span>
+              <button class="btn" id="batchPublishBtn" onclick="batchPublishSelected()">批量发布 →</button>
             </div>
           </section>
 
@@ -1331,6 +1353,8 @@
         publishJobs = [],
         activePublicationId = "",
         queueResumeBusy = false,
+        batchPublishBusy = false,
+        publishQueueMessage = "",
         imageBackfillBusy = false,
         expiryTimer = null;
       const selectedPublishPlatforms = new Set(["toutiao"]);
@@ -1889,15 +1913,18 @@
           method: "POST",
           body: JSON.stringify({ article_ids: ids, platforms }),
         });
-        publishJobs.unshift(...(data.jobs || []));
-        ids.forEach((id) => {
-          const article = articles.find((item) => item.id === id);
-          if (article) article.status = "已发";
-        });
-        return data.jobs || [];
+        const returned = data.jobs || [];
+        const returnedIds = new Set(returned.map((job) => job.id));
+        publishJobs = [
+          ...returned,
+          ...publishJobs.filter((job) => !returnedIds.has(job.id)),
+        ];
+        return data;
       }
       async function executePublishJobs(article, jobs, accountMap) {
         const targets = jobs.map((job) => job.platform);
+        const bridge = publishBridge();
+        if (!bridge) throw new Error("文章同步助手已断开，请刷新页面后重试");
         activePublicationId = article.id;
         publishRuns[article.id] = targets.map((platform) => ({
           platform,
@@ -1910,37 +1937,31 @@
         );
         renderPublish();
         await savePublishResults(article.id, publishRuns[article.id]);
-        publishBridge().addTask(
-          {
-            post: {
-              title: article.title,
-              desc: String(article.body || "").replace(/\s+/g, " ").slice(0, 120),
-              content: articlePublishHtml(article),
-              thumb: safeLink(article.cover_url || ""),
-            },
-            accounts: targets.map((type) => accountMap.get(type)),
-          },
-          async (task) => {
-            const statuses = Array.isArray(task?.accounts)
-              ? task.accounts
-                  .filter((account) => targets.includes(account.type))
-                  .map((account) => ({
-                    platform: account.type,
-                    status: account.status || "uploading",
-                    msg: account.msg || "",
-                    error: account.error || "",
-                    draft_link: account.editResp?.draftLink || "",
-                  }))
-              : [];
-            if (!statuses.length) return;
+        return new Promise((resolve) => {
+          let settled = false;
+          let idleTimer = null;
+          const armWatchdog = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+              const timedOut = (publishRuns[article.id] || []).map((status) =>
+                ["done", "failed"].includes(status.status)
+                  ? status
+                  : {
+                      ...status,
+                      status: "failed",
+                      error:
+                        "同步助手 90 秒没有返回新进度，请检查平台登录状态后重试",
+                    },
+              );
+              void finish(timedOut);
+            }, 90000);
+          };
+          const finish = async (statuses) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(idleTimer);
             publishRuns[article.id] = statuses;
-            renderPublish();
-            const complete = statuses.every((status) =>
-              ["done", "failed"].includes(status.status),
-            );
-            if (!complete) return;
-            activePublicationId = "";
-            await Promise.all(
+            const updates = await Promise.allSettled(
               statuses.map((status) => {
                 const job = jobs.find(
                   (item) => item.platform === status.platform,
@@ -1951,19 +1972,98 @@
               }),
             );
             await savePublishResults(article.id, statuses);
+            const failedSaves = updates.filter(
+              (result) => result.status === "rejected",
+            ).length;
+            const succeeded = statuses.filter(
+              (status) => status.status === "done",
+            );
             const failed = statuses.filter(
               (status) => status.status === "failed",
             );
-            toast(
-              failed.length
-                ? `${statuses.length - failed.length} 个平台同步成功，${failed.length} 个失败`
-                : `${statuses.length} 个平台已同步到草稿箱`,
-            );
+            if (succeeded.length) article.status = "已发";
+            activePublicationId = "";
+            publishQueueMessage = failed.length
+              ? `${article.title}：${succeeded.length} 个平台成功，${failed.length} 个失败`
+              : `${article.title}：已同步到 ${succeeded.length} 个平台草稿箱`;
+            if (failedSaves)
+              publishQueueMessage += `；${failedSaves} 条云端状态待刷新`;
+            toast(publishQueueMessage);
             renderPublish();
-            setTimeout(() => resumePublishQueue(false), 500);
-          },
-          () => {},
-        );
+            resolve(statuses);
+          };
+          const handleTaskUpdate = async (task) => {
+            if (settled) return;
+            const incoming = new Map(
+              (Array.isArray(task?.accounts) ? task.accounts : [])
+                .filter((account) => targets.includes(account.type))
+                .map((account) => [
+                  account.type,
+                  {
+                    platform: account.type,
+                    status: account.status || "uploading",
+                    msg: account.msg || "",
+                    error: account.error || "",
+                    draft_link: account.editResp?.draftLink || "",
+                  },
+                ]),
+            );
+            if (!incoming.size) return;
+            const statuses = targets.map(
+              (platform) =>
+                incoming.get(platform) ||
+                (publishRuns[article.id] || []).find(
+                  (status) => status.platform === platform,
+                ) || { platform, status: "uploading", error: "", draft_link: "" },
+            );
+            publishRuns[article.id] = statuses;
+            publishQueueMessage = `${article.title}：正在同步 ${statuses.filter((status) => ["pending", "uploading"].includes(status.status)).length} 个平台`;
+            renderPublish();
+            if (
+              statuses.every((status) =>
+                ["done", "failed"].includes(status.status),
+              )
+            )
+              await finish(statuses);
+            else armWatchdog();
+          };
+          armWatchdog();
+          try {
+            bridge.addTask(
+              {
+                post: {
+                  title: article.title,
+                  desc: String(article.body || "")
+                    .replace(/\s+/g, " ")
+                    .slice(0, 120),
+                  content: articlePublishHtml(article),
+                  thumb: safeLink(article.cover_url || ""),
+                },
+                accounts: targets.map((type) => accountMap.get(type)),
+              },
+              (task) => {
+                void handleTaskUpdate(task).catch((error) => {
+                  const failed = targets.map((platform) => ({
+                    platform,
+                    status: "failed",
+                    error: `处理同步回执失败：${error.message}`,
+                    draft_link: "",
+                  }));
+                  void finish(failed);
+                });
+              },
+              () => {},
+            );
+          } catch (error) {
+            const failed = targets.map((platform) => ({
+              platform,
+              status: "failed",
+              error: `启动同步失败：${error.message}`,
+              draft_link: "",
+            }));
+            void finish(failed);
+          }
+        });
       }
       async function oneClickPublish(id) {
         if (activePublicationId)
@@ -1993,20 +2093,37 @@
             renderPublish();
             return toast(`请先登录：${names.join("、")}`);
           }
-          const jobs = await createPublishJobs(id, targets);
+          const result = await createPublishJobs(id, targets);
           renderLibrary();
-          await executePublishJobs(article, jobs, accountMap);
+          const runnable = (result.jobs || []).filter(
+            (job) => job.status === "queued",
+          );
+          if (!runnable.length) {
+            activePublicationId = "";
+            publishQueueMessage = "该稿件已有任务正在执行，请稍后查看任务状态";
+            renderPublish();
+            return toast(publishQueueMessage);
+          }
+          await executePublishJobs(article, runnable, accountMap);
         } catch (error) {
           activePublicationId = "";
+          publishQueueMessage = `发布失败：${error.message}`;
           renderPublish();
           toast(error.message);
         }
       }
       async function batchPublishSelected() {
-        if (activePublicationId || queueResumeBusy)
-          return toast("请等待当前稿件同步完成后再批量发布");
-        if (!publishBridge())
-          return toast("未检测到文章同步助手，请先安装或启用后刷新页面");
+        if (batchPublishBusy) return;
+        if (activePublicationId || queueResumeBusy) {
+          publishQueueMessage = "已有发布任务正在执行，请在任务完成后再新增批次";
+          updateBatchBar();
+          return toast(publishQueueMessage);
+        }
+        if (!publishBridge()) {
+          publishQueueMessage = "未检测到文章同步助手，请先安装或启用后刷新页面";
+          updateBatchBar();
+          return toast(publishQueueMessage);
+        }
         const ids = [...selectedArticleIds].filter((id) => {
           const article = articles.find((item) => item.id === id);
           return article && article.status !== "已发" && qinfo(article).cls !== "r";
@@ -2014,22 +2131,31 @@
         if (!ids.length) return toast("请先勾选可发布稿件");
         const targets = [...selectedPublishPlatforms];
         if (!targets.length) return toast("请至少选择一个发布平台");
+        batchPublishBusy = true;
+        publishQueueMessage = `正在创建 ${ids.length} 篇 × ${targets.length} 个平台的发布任务…`;
+        updateBatchBar();
         try {
           if (!publishAccounts.length) publishAccounts = await readPublishAccounts();
           renderPublishConnections();
           const connected = new Set(publishAccounts.map((account) => account.type));
           const missing = targets.filter((type) => !connected.has(type));
-          if (missing.length)
-            return toast(
-              `请先登录：${missing.map((type) => PUBLISH_PLATFORMS[type].name).join("、")}`,
-            );
-          await createPublishJobs(ids, targets);
+          if (missing.length) {
+            publishQueueMessage = `请先登录：${missing.map((type) => PUBLISH_PLATFORMS[type].name).join("、")}`;
+            toast(publishQueueMessage);
+            return;
+          }
+          const result = await createPublishJobs(ids, targets);
           selectedArticleIds.clear();
+          publishQueueMessage = `${ids.length} 篇已进入队列，正在按顺序发布（新建 ${result.created_count || 0}，已存在 ${result.reused_count || 0}）`;
           renderLibrary();
-          toast(`${ids.length} 篇稿件已排队，将按顺序自动发布`);
-          setTimeout(() => resumePublishQueue(false), 100);
+          toast(`${ids.length} 篇稿件已进入队列，正在开始发布`);
+          await resumePublishQueue(false);
         } catch (error) {
+          publishQueueMessage = `批量发布未启动：${error.message}`;
           toast(error.message);
+        } finally {
+          batchPublishBusy = false;
+          updateBatchBar();
         }
       }
       async function retryPublishJob(jobId) {
@@ -2039,7 +2165,7 @@
             body: "{}",
           });
           await loadArticles();
-          resumePublishQueue(true);
+          await resumePublishQueue(true);
         } catch (error) {
           toast(error.message);
         }
@@ -2049,34 +2175,62 @@
           if (notify) toast("已有任务正在执行");
           return;
         }
-        const queued = [...publishJobs]
-          .filter((job) => job.status === "queued")
-          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
-        if (!queued.length) {
+        if (!publishJobs.some((job) => job.status === "queued")) {
           if (notify) toast("当前没有待处理发布任务");
           return;
         }
         queueResumeBusy = true;
+        updateBatchBar();
         try {
           if (!publishAccounts.length) publishAccounts = await readPublishAccounts();
           renderPublishConnections();
           const accountMap = new Map(publishAccounts.map((a) => [a.type, a]));
-          const articleId = queued[0].article_id;
-          const jobs = queued.filter(
-            (job) => job.article_id === articleId && accountMap.has(job.platform),
-          );
-          if (!jobs.length) {
-            if (notify) toast("待处理任务的平台尚未登录");
-            return;
+          while (true) {
+            const queued = [...publishJobs]
+              .filter((job) => job.status === "queued")
+              .sort((a, b) =>
+                String(a.created_at).localeCompare(String(b.created_at)),
+              );
+            if (!queued.length) break;
+            const articleId = queued[0].article_id;
+            const articleJobs = queued.filter(
+              (job) => job.article_id === articleId,
+            );
+            const jobs = articleJobs.filter((job) => accountMap.has(job.platform));
+            if (!jobs.length) {
+              const names = articleJobs.map(
+                (job) => PUBLISH_PLATFORMS[job.platform]?.name || job.platform,
+              );
+              publishQueueMessage = `队列已暂停，请先登录：${[...new Set(names)].join("、")}`;
+              toast(publishQueueMessage);
+              break;
+            }
+            const article = articles.find((item) => item.id === articleId);
+            if (!article) {
+              await Promise.allSettled(
+                articleJobs.map((job) =>
+                  updatePublishJob(job.id, "failed", {
+                    error: "稿件已被清理，无法继续发布",
+                  }),
+                ),
+              );
+              continue;
+            }
+            const remaining = publishJobs.filter(
+              (job) => job.status === "queued",
+            ).length;
+            publishQueueMessage = `正在发布《${article.title}》；队列剩余 ${remaining} 个平台任务`;
+            renderPublish();
+            await ensureArticleImages(article);
+            await executePublishJobs(article, jobs, accountMap);
           }
-          const article = articles.find((item) => item.id === articleId);
-          if (!article) return toast("发布任务对应的稿件已不存在");
-          await ensureArticleImages(article);
-          await executePublishJobs(article, jobs, accountMap);
         } catch (error) {
-          if (notify) toast(error.message);
+          publishQueueMessage = `队列已暂停：${error.message}`;
+          toast(publishQueueMessage);
         } finally {
           queueResumeBusy = false;
+          updateBatchBar();
+          renderPublishManager();
         }
       }
       function cardHtml(a, ctx) {
@@ -2087,7 +2241,7 @@
           : "";
         let acts = "";
         if (ctx === "library") {
-          acts = `<button class="btn ghost sm" onclick="revise('${a.id}',this)">稿件修改</button><button class="btn ghost sm" onclick="autoImages('${a.id}',this)">🖼 智能换配图</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : "一键发布"}</button>`;
+          acts = `<button class="btn ghost sm" onclick="revise('${a.id}',this)">稿件修改</button><button class="btn ghost sm" onclick="autoImages('${a.id}',this)">🖼 智能换配图</button><button class="btn primary sm" onclick="oneClickPublish('${a.id}')" ${red || activePublicationId || a.status === "已发" ? "disabled" : ""}>${activePublicationId === a.id ? "发布中…" : a.status === "已发" ? "已发布" : "一键发布"}</button>`;
           acts +=
             a.status === "已发"
               ? `<button class="btn ghost sm" onclick="setStatus('${a.id}','未发')">改回未发</button>`
@@ -2108,8 +2262,21 @@
         const bar = $("#libraryBatchBar");
         if (!bar) return;
         const count = selectedArticleIds.size;
-        bar.hidden = count === 0;
-        $("#batchN").textContent = `已选 ${count} 篇 · 将发布到 ${selectedPublishPlatforms.size} 个平台`;
+        const queued = publishJobs.filter((job) => job.status === "queued").length;
+        const running = Boolean(activePublicationId || queueResumeBusy);
+        bar.hidden = count === 0 && !batchPublishBusy && !running && queued === 0;
+        $("#batchN").textContent = running
+          ? `批量发布执行中 · 待处理 ${queued} 个平台任务`
+          : `已选 ${count} 篇 · 将发布到 ${selectedPublishPlatforms.size} 个平台`;
+        $("#batchHint").textContent =
+          publishQueueMessage || "确认后将按稿件顺序逐篇同步";
+        const button = $("#batchPublishBtn");
+        button.disabled = batchPublishBusy || running || count === 0;
+        button.textContent = running
+          ? "发布处理中…"
+          : batchPublishBusy
+            ? "正在建队列…"
+            : "批量发布 →";
       }
       async function loadArticles(render = true) {
         try {
@@ -2188,9 +2355,12 @@
               `<span class="publish-pill ${status}">${label} ${summary[status]}</span>`,
           )
           .join("");
+        const notice = $("#publishQueueNotice");
+        notice.hidden = !publishQueueMessage;
+        notice.textContent = publishQueueMessage;
         $("#publishJobList").innerHTML = publishJobs.length
           ? publishJobs
-              .slice(0, 8)
+              .slice(0, 20)
               .map((job) => {
                 const platform = PUBLISH_PLATFORMS[job.platform];
                 const article = articles.find(

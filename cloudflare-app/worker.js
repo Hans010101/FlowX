@@ -1687,7 +1687,7 @@ async function handleApi(request, env, user) {
       .bind(email, articleId)
       .first();
     if (!article) return json({ error: "稿件不存在" }, 404);
-    const statements = results
+    const normalizedResults = results
       .map((result) => ({
         platform: String(result.platform || ""),
         status: String(result.status || "pending"),
@@ -1698,29 +1698,35 @@ async function handleApi(request, env, user) {
         (result) =>
           allowedPlatforms.has(result.platform) &&
           allowedStatuses.has(result.status),
-      )
-      .map((result) =>
-        env.DB.prepare(
-          `INSERT INTO user_publications(owner_email,article_id,platform,status,error,draft_link,updated_at)
-           VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)
-           ON CONFLICT(owner_email,article_id,platform) DO UPDATE SET
-             status=excluded.status,error=excluded.error,draft_link=excluded.draft_link,updated_at=CURRENT_TIMESTAMP`,
-        ).bind(
-          email,
-          articleId,
-          result.platform,
-          result.status,
-          result.error,
-          result.draftLink,
-        ),
       );
+    const statements = normalizedResults.map((result) =>
+      env.DB.prepare(
+        `INSERT INTO user_publications(owner_email,article_id,platform,status,error,draft_link,updated_at)
+         VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)
+         ON CONFLICT(owner_email,article_id,platform) DO UPDATE SET
+           status=excluded.status,error=excluded.error,draft_link=excluded.draft_link,updated_at=CURRENT_TIMESTAMP`,
+      ).bind(
+        email,
+        articleId,
+        result.platform,
+        result.status,
+        result.error,
+        result.draftLink,
+      ),
+    );
     if (!statements.length) return json({ error: "没有可保存的平台结果" }, 400);
+    if (normalizedResults.some((result) => result.status === "done"))
+      statements.push(
+        env.DB.prepare(
+          "UPDATE user_articles SET status='已发',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
+        ).bind(email, articleId),
+      );
     await env.DB.batch(statements);
     return json({ ok: true });
   }
   if (path === "/api/publish-jobs" && request.method === "GET") {
     await env.DB.prepare(
-      "UPDATE user_publish_jobs SET status='queued',error='上次执行中断，已重新排队',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND status='running' AND updated_at < datetime('now','-10 minutes')",
+      "UPDATE user_publish_jobs SET status='queued',error='上次执行中断，已重新排队',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND status='running' AND updated_at < datetime('now','-3 minutes')",
     )
       .bind(email)
       .run();
@@ -1768,24 +1774,50 @@ async function handleApi(request, env, user) {
       )
     )
       return json({ error: "红档稿件不能进入发布队列" }, 400);
+    if (validArticles.some((article) => article.status === "已发"))
+      return json(
+        { error: "部分稿件已发布；如需再次同步，请先将其改回未发" },
+        400,
+      );
+    const platformPlaceholders = platforms.map(() => "?").join(",");
+    const existingRows = await env.DB.prepare(
+      `SELECT id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at
+       FROM user_publish_jobs
+       WHERE owner_email=?
+         AND article_id IN (${placeholders})
+         AND platform IN (${platformPlaceholders})
+         AND status IN ('queued','running')`,
+    )
+      .bind(email, ...articleIds, ...platforms)
+      .all();
+    const existingJobs = existingRows.results || [];
+    const existingPairs = new Set(
+      existingJobs.map((job) => `${job.article_id}:${job.platform}`),
+    );
     const queueStartedAt = Date.now();
     const jobs = articleIds.flatMap((articleId, articleIndex) =>
-      platforms.map((platform) => ({
-        id: crypto.randomUUID(),
-        article_id: articleId,
-        platform,
-        status: "queued",
-        attempts: 0,
-        error: "",
-        draft_link: "",
-        created_at: new Date(queueStartedAt + articleIndex).toISOString(),
-      })),
+      platforms
+        .filter(
+          (platform) => !existingPairs.has(`${articleId}:${platform}`),
+        )
+        .map((platform) => ({
+          id: crypto.randomUUID(),
+          article_id: articleId,
+          platform,
+          status: "queued",
+          attempts: 0,
+          error: "",
+          draft_link: "",
+          created_at: new Date(queueStartedAt + articleIndex).toISOString(),
+          updated_at: new Date(queueStartedAt + articleIndex).toISOString(),
+        })),
     );
-    await env.DB.batch(
-      [
-        ...jobs.map((job) =>
+    let createdCount = 0;
+    if (jobs.length) {
+      const insertResults = await env.DB.batch(
+        jobs.map((job) =>
           env.DB.prepare(
-            "INSERT INTO user_publish_jobs(owner_email,id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at) VALUES(?,?,?,?,?,0,'','',?,CURRENT_TIMESTAMP)",
+            "INSERT OR IGNORE INTO user_publish_jobs(owner_email,id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at) VALUES(?,?,?,?,?,0,'','',?,CURRENT_TIMESTAMP)",
           ).bind(
             email,
             job.id,
@@ -1795,14 +1827,37 @@ async function handleApi(request, env, user) {
             job.created_at,
           ),
         ),
-        ...articleIds.map((articleId) =>
-          env.DB.prepare(
-            "UPDATE user_articles SET status='已发',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
-          ).bind(email, articleId),
-        ),
-      ],
-    );
-    return json({ ok: true, jobs, article_ids: articleIds });
+      );
+      createdCount = insertResults.reduce(
+        (total, result) => total + Number(result.meta?.changes || 0),
+        0,
+      );
+    }
+    const activeRows = await env.DB.prepare(
+      `SELECT id,article_id,platform,status,attempts,error,draft_link,created_at,updated_at
+       FROM user_publish_jobs
+       WHERE owner_email=?
+         AND article_id IN (${placeholders})
+         AND platform IN (${platformPlaceholders})
+         AND status IN ('queued','running')`,
+    )
+      .bind(email, ...articleIds, ...platforms)
+      .all();
+    const allJobs = (activeRows.results || []).sort((a, b) => {
+      const articleOrder =
+        articleIds.indexOf(a.article_id) - articleIds.indexOf(b.article_id);
+      return (
+        articleOrder ||
+        platforms.indexOf(a.platform) - platforms.indexOf(b.platform)
+      );
+    });
+    return json({
+      ok: true,
+      jobs: allJobs,
+      article_ids: articleIds,
+      created_count: createdCount,
+      reused_count: allJobs.length - createdCount,
+    });
   }
   const publishJobMatch = path.match(
     /^\/api\/publish-jobs\/([0-9a-f-]+)(?:\/(retry))?$/,
@@ -1811,7 +1866,7 @@ async function handleApi(request, env, user) {
     const jobId = publishJobMatch[1];
     const retry = publishJobMatch[2] === "retry";
     const job = await env.DB.prepare(
-      "SELECT id FROM user_publish_jobs WHERE owner_email=? AND id=?",
+      "SELECT id,article_id,status FROM user_publish_jobs WHERE owner_email=? AND id=?",
     )
       .bind(email, jobId)
       .first();
@@ -1830,13 +1885,20 @@ async function handleApi(request, env, user) {
     if (!allowedStatuses.has(status)) return json({ error: "任务状态无效" }, 400);
     const error = String(body.error || "").slice(0, 500);
     const draftLink = String(body.draft_link || "").slice(0, 1000);
-    await env.DB.prepare(
+    const updateJob = env.DB.prepare(
       `UPDATE user_publish_jobs SET status=?,error=?,draft_link=?,
-       attempts=attempts+CASE WHEN ?='running' THEN 1 ELSE 0 END,updated_at=CURRENT_TIMESTAMP
+       attempts=attempts+CASE WHEN ?='running' AND status!='running' THEN 1 ELSE 0 END,
+       updated_at=CURRENT_TIMESTAMP
        WHERE owner_email=? AND id=?`,
-    )
-      .bind(status, error, draftLink, status, email, jobId)
-      .run();
+    ).bind(status, error, draftLink, status, email, jobId);
+    if (status === "done")
+      await env.DB.batch([
+        updateJob,
+        env.DB.prepare(
+          "UPDATE user_articles SET status='已发',updated_at=CURRENT_TIMESTAMP WHERE owner_email=? AND id=?",
+        ).bind(email, job.article_id),
+      ]);
+    else await updateJob.run();
     return json({ ok: true });
   }
   const articleMatch = path.match(/^\/api\/articles\/([a-f0-9]+)$/);

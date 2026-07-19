@@ -2,7 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "flowx-app",
   "main": "worker.js",
-  "compatibility_date": "2026-07-15",
+  "compatibility_date": "2026-07-19",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "assets": {
     "directory": "./assets",
