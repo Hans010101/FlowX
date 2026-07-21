@@ -1794,32 +1794,42 @@
           .split(/\n{2,}/)
           .filter((part) => part.trim());
         const images = Array.isArray(inlineImages)
-          ? inlineImages.slice(0, 2)
+          ? inlineImages.slice(0, 3)
           : articleImages(article).slice(1);
         if (!paragraphs.length) return "";
         const placements = new Map();
+        const slots = Array.from(
+          { length: Math.max(1, paragraphs.length - 2) },
+          (_, index) =>
+            paragraphs.length >= 4 ? index + 1 : index,
+        );
         images.forEach((url, index) => {
-          const desired = Math.floor(((index + 1) * paragraphs.length) / (images.length + 1)) - 1;
-          let after = Math.max(0, Math.min(paragraphs.length - 2, desired));
-          while (placements.has(after) && after < paragraphs.length - 2) after++;
-          placements.set(after, { url, index });
+          const slotIndex =
+            images.length === 1
+              ? Math.floor((slots.length - 1) / 2)
+              : Math.round((index * (slots.length - 1)) / (images.length - 1));
+          const after = slots[Math.max(0, Math.min(slots.length - 1, slotIndex))];
+          const placed = placements.get(after) || [];
+          placed.push({ url, index });
+          placements.set(after, placed);
         });
         return paragraphs
           .map((part, index) => {
             const paragraph = `<p>${richText(part).replace(/\n/g, "<br>")}</p>`;
-            const image = placements.get(index);
-            if (!image) return paragraph;
-            return `${paragraph}<figure class="article-inline-figure"><img class="article-inline-image" src="${esc(image.url)}" alt="" loading="lazy" /></figure>`;
+            const placed = placements.get(index) || [];
+            if (!placed.length) return paragraph;
+            return `${paragraph}${placed
+              .map(
+                (image) =>
+                  `<figure class="article-inline-figure"><img class="article-inline-image" src="${esc(image.url)}" alt="" loading="lazy" /></figure>`,
+              )
+              .join("")}`;
           })
           .join("");
       }
-      function articlePublishHtml(article, includeCover = true) {
+      function articlePublishHtml(article) {
         const images = articleImages(article);
-        const cover = includeCover ? images[0] || "" : "";
-        const coverHtml = cover
-          ? `<p><img src="${esc(cover)}" alt="" /></p>`
-          : "";
-        return `${coverHtml}${articleBodyHtml(article, images.slice(1))}`;
+        return articleBodyHtml(article, images);
       }
       async function savePublishResults(articleId, results) {
         try {
@@ -2424,7 +2434,7 @@
             navigator.clipboard.write &&
             window.ClipboardItem
           ) {
-            const html = articlePublishHtml(a, false);
+            const html = articlePublishHtml(a);
             await navigator.clipboard.write([
               new ClipboardItem({
                 "text/plain": new Blob([plainText(a.body)], {
