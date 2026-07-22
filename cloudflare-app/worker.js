@@ -7,6 +7,8 @@ const BOCHA_URL = "https://api.bochaai.com/v1/web-search";
 const PEXELS_URL = "https://api.pexels.com/v1/search";
 const DEFAULT_DAILYHOT_URL = "https://api-hot.imsyy.top";
 const ARTICLE_RETENTION_HOURS = 36;
+const ARTICLE_MIN_CHARACTERS = 800;
+const ARTICLE_MAX_CHARACTERS = 1500;
 
 const HOT_SOURCES = {
   baidu: { name: "百度", direct: true },
@@ -1190,6 +1192,77 @@ function articleStructure(body) {
   };
 }
 
+function shortenParagraph(text, limit) {
+  const source = String(text || "").trim();
+  if (source.length <= limit) return source;
+  if (limit <= 0) return "";
+  const candidate = source.slice(0, Math.max(1, limit - 1)).trimEnd();
+  const minimumBoundary = Math.min(60, Math.floor(candidate.length * 0.6));
+  let boundary = 0;
+  for (const match of candidate.matchAll(/[。！？；]/g)) {
+    const position = match.index + 1;
+    if (position >= minimumBoundary) boundary = position;
+  }
+  const shortened = (boundary ? candidate.slice(0, boundary) : candidate)
+    .replace(/[，、：；\s]+$/g, "")
+    .trim();
+  return shortened && !/[。！？]$/.test(shortened)
+    ? `${shortened}。`
+    : shortened;
+}
+
+function enforceArticleMaxLength(body, maxLength = ARTICLE_MAX_CHARACTERS) {
+  const structured = ensureArticleStructure(body);
+  if (articleStructure(structured).length <= maxLength) return structured;
+
+  const paragraphs = structured
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const intro = paragraphs.shift() || "";
+  let expert = paragraphs.pop() || "";
+  expert = shortenParagraph(expert, 280);
+
+  const fixedLength = articleStructure(`${intro}\n\n${expert}`).length;
+  let remaining = Math.max(0, maxLength - fixedLength);
+  const middle = [];
+  for (const paragraph of paragraphs) {
+    const paragraphLength = paragraph.replace(/\s/g, "").length;
+    if (paragraphLength <= remaining) {
+      middle.push(paragraph);
+      remaining -= paragraphLength;
+      continue;
+    }
+    const shortened = shortenParagraph(paragraph, remaining);
+    if (shortened) middle.push(shortened);
+    break;
+  }
+
+  let result = [intro, ...middle, expert].filter(Boolean).join("\n\n");
+  while (articleStructure(result).length > maxLength) {
+    const overflow = articleStructure(result).length - maxLength;
+    if (middle.length) {
+      const last = middle.length - 1;
+      middle[last] = shortenParagraph(
+        middle[last],
+        Math.max(0, middle[last].length - overflow - 1),
+      );
+      if (!middle[last]) middle.pop();
+    } else {
+      expert = shortenParagraph(
+        expert,
+        Math.max(80, expert.length - overflow - 1),
+      );
+    }
+    result = [intro, ...middle, expert].filter(Boolean).join("\n\n");
+  }
+  return result;
+}
+
+function finalizeArticleBody(body) {
+  return ensureHighlights(enforceArticleMaxLength(body));
+}
+
 function ensureHighlights(body) {
   const source = String(body || "").trim();
   const existing = [...source.matchAll(/\*\*([^*\n]{4,160})\*\*/g)];
@@ -1253,10 +1326,14 @@ async function qualityCheck(article, key) {
   if (article.title.length < 8)
     localProblems.push(`标题过短（${article.title.length}字）`);
   const structure = articleStructure(article.body);
-  if (structure.length < 800)
-    structureProblems.push(`正文过短（${structure.length}字，要求800—1500字）`);
-  if (structure.length > 1500)
-    structureProblems.push(`正文过长（${structure.length}字，要求800—1500字）`);
+  if (structure.length < ARTICLE_MIN_CHARACTERS)
+    structureProblems.push(
+      `正文过短（${structure.length}字，要求${ARTICLE_MIN_CHARACTERS}—${ARTICLE_MAX_CHARACTERS}字）`,
+    );
+  if (structure.length > ARTICLE_MAX_CHARACTERS)
+    structureProblems.push(
+      `正文过长（${structure.length}字，上限${ARTICLE_MAX_CHARACTERS}字）`,
+    );
   if (!structure.intro)
     structureProblems.push("缺少文章导语");
   else if (structure.intro.length > 100)
@@ -1332,6 +1409,9 @@ async function saveArticle(
   oldId = null,
   originalCreatedAt = null,
 ) {
+  article.body = finalizeArticleBody(article.body);
+  if (articleStructure(article.body).length > ARTICLE_MAX_CHARACTERS)
+    throw new Error(`正文不得超过${ARTICLE_MAX_CHARACTERS}字`);
   const id = await articleId(article.title);
   const status = qc.level === "red" ? "待修复" : "未发";
   article.image_urls = normalizeImageUrls(
@@ -1436,7 +1516,7 @@ async function generateOne(item, env, email) {
     [
       {
         role: "system",
-        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500字，建议控制在900到1300字。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
+        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
       },
       {
         role: "user",
@@ -1450,7 +1530,7 @@ async function generateOne(item, env, email) {
     title: String(draft.title || item.title)
       .trim()
       .slice(0, 60),
-    body: ensureHighlights(ensureArticleStructure(draft.body)),
+    body: finalizeArticleBody(draft.body),
     track,
     source: item.source || "",
     research_provider: search.provider,
@@ -1761,7 +1841,7 @@ async function handleApi(request, env, user) {
       return json({ error: "请选择有效稿件和发布平台" }, 400);
     const placeholders = articleIds.map(() => "?").join(",");
     const articleRows = await env.DB.prepare(
-      `SELECT id,status,qc_level FROM user_articles WHERE owner_email=? AND id IN (${placeholders})`,
+      `SELECT id,status,qc_level,body FROM user_articles WHERE owner_email=? AND id IN (${placeholders})`,
     )
       .bind(email, ...articleIds)
       .all();
@@ -1777,6 +1857,16 @@ async function handleApi(request, env, user) {
     if (validArticles.some((article) => article.status === "已发"))
       return json(
         { error: "部分稿件已发布；如需再次同步，请先将其改回未发" },
+        400,
+      );
+    if (
+      validArticles.some(
+        (article) =>
+          articleStructure(article.body).length > ARTICLE_MAX_CHARACTERS,
+      )
+    )
+      return json(
+        { error: `正文超过${ARTICLE_MAX_CHARACTERS}字，请先点击“稿件修改”后再发布` },
         400,
       );
     const platformPlaceholders = platforms.map(() => "?").join(",");
@@ -1912,7 +2002,7 @@ async function handleApi(request, env, user) {
     const body = await request.json();
     const article = {
       title: String(body.title || "").trim(),
-      body: ensureHighlights(ensureArticleStructure(body.body)),
+      body: finalizeArticleBody(body.body),
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
@@ -1999,7 +2089,7 @@ async function handleApi(request, env, user) {
         {
           role: "system",
           content:
-            `你是中文内容编辑。只返回JSON。根据问题重写稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文净字数必须为800到1500字。首段必须以“导语：”开头，在100字以内提前说明核心内容。末段要体现${old.track || "相关"}行业专业判断，给出总结、影响分析或趋势预测，但不要自称专家；根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。`,
+            `你是中文内容编辑。只返回JSON。根据问题重写稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，在100字以内提前说明核心内容。末段要体现${old.track || "相关"}行业专业判断，给出总结、影响分析或趋势预测，但不要自称专家；根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。`,
         },
         {
           role: "user",
@@ -2011,7 +2101,7 @@ async function handleApi(request, env, user) {
     );
     const article = {
       title: String(revised.title || old.title).trim(),
-      body: ensureHighlights(ensureArticleStructure(revised.body || old.body)),
+      body: finalizeArticleBody(revised.body || old.body),
       track: old.track,
       source: old.source,
       cover_url: old.cover_url || "",
