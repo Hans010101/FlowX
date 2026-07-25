@@ -953,13 +953,13 @@ function normalizeImageQueries(value) {
   ].slice(0, 3);
 }
 
-async function imageSearchQueries(article, deepseekKey, env) {
+async function imageSearchQueries(article, deepseekKey, env, usage = null) {
   const supplied = normalizeImageQueries(article.image_queries);
   if (supplied.length >= 2) return supplied;
   let queries = supplied;
   if (deepseekKey || env?.AI) {
     try {
-      const result = await deepseek(
+      const result = await runJsonModel(
         [
           {
             role: "system",
@@ -980,6 +980,7 @@ async function imageSearchQueries(article, deepseekKey, env) {
         deepseekKey,
         0.2,
         env,
+        usage,
       );
       queries = normalizeImageQueries(result.queries);
     } catch {}
@@ -1020,10 +1021,16 @@ async function pexelsSearch(query, pexelsKey, page = 1) {
   }
 }
 
-async function rankPexelsCandidates(article, candidates, deepseekKey, env) {
+async function rankPexelsCandidates(
+  article,
+  candidates,
+  deepseekKey,
+  env,
+  usage = null,
+) {
   if ((!deepseekKey && !env?.AI) || candidates.length < 2) return [];
   try {
-    const result = await deepseek(
+    const result = await runJsonModel(
       [
         {
           role: "system",
@@ -1048,6 +1055,7 @@ async function rankPexelsCandidates(article, candidates, deepseekKey, env) {
       deepseekKey,
       0.1,
       env,
+      usage,
     );
     const selectedIds = new Set(
       (Array.isArray(result.selected_ids) ? result.selected_ids : [])
@@ -1066,9 +1074,15 @@ async function pexelsImages(
   deepseekKey,
   env,
   page = 1,
+  usage = null,
 ) {
   if (!pexelsKey) return normalizeImageUrls([], article.cover_url);
-  const queries = await imageSearchQueries(article, deepseekKey, env);
+  const queries = await imageSearchQueries(
+    article,
+    deepseekKey,
+    env,
+    usage,
+  );
   const groups = await Promise.all(
     queries.map((query) => pexelsSearch(query, pexelsKey, page)),
   );
@@ -1084,6 +1098,7 @@ async function pexelsImages(
     candidates,
     deepseekKey,
     env,
+    usage,
   );
   if (ranked.length)
     return normalizeImageUrls(ranked.map((photo) => photo.url));
@@ -1226,64 +1241,94 @@ function providerErrorMessage(status, data) {
   return data?.error?.message || `DeepSeek 调用失败：HTTP ${status}`;
 }
 
-async function deepseek(messages, key, temperature = 0.7, env = null) {
-  let primaryError = key ? null : new Error("DeepSeek 未配置");
-  if (key) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const response = await fetchWithTimeout(
-          DEEPSEEK_URL,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              authorization: `Bearer ${key}`,
-            },
-            body: JSON.stringify({
-              model: DEEPSEEK_MODEL,
-              messages,
-              thinking: { type: "disabled" },
-              temperature,
-              response_format: { type: "json_object" },
-            }),
+async function runDeepSeekJson(messages, key, temperature = 0.7, usage = null) {
+  if (!key) throw new Error("DeepSeek 未配置");
+  let lastError = new Error("DeepSeek 调用失败");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(
+        DEEPSEEK_URL,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${key}`,
           },
-          45000,
+          body: JSON.stringify({
+            model: DEEPSEEK_MODEL,
+            messages,
+            thinking: { type: "disabled" },
+            temperature,
+            response_format: { type: "json_object" },
+          }),
+        },
+        45000,
+      );
+      const data = await response.json();
+      if (response.ok) {
+        if (usage) usage.deepseek = Number(usage.deepseek || 0) + 1;
+        return parseJsonModelResponse(
+          data?.choices?.[0]?.message?.content || "{}",
         );
-        const data = await response.json();
-        if (response.ok)
-          return parseJsonModelResponse(
-            data?.choices?.[0]?.message?.content || "{}",
-          );
-        primaryError = new Error(providerErrorMessage(response.status, data));
-        if (
-          attempt === 0 &&
-          (response.status === 429 || response.status >= 500)
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 700));
-          continue;
-        }
-        break;
-      } catch (error) {
-        primaryError = error;
-        if (attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          continue;
-        }
+      }
+      lastError = new Error(providerErrorMessage(response.status, data));
+      if (
+        attempt === 0 &&
+        (response.status === 429 || response.status >= 500)
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        continue;
+      }
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
       }
     }
   }
-  if (!env?.AI) throw primaryError || new Error("没有可用的写作模型");
+  throw lastError;
+}
+
+async function runJsonModel(
+  messages,
+  key,
+  temperature = 0.7,
+  env = null,
+  usage = null,
+) {
+  let workersAiError = env?.AI
+    ? null
+    : new Error("Cloudflare Workers AI 未绑定");
+  if (env?.AI) {
+    try {
+      const result = await env.AI.run(WORKERS_AI_MODEL, {
+        messages,
+        temperature,
+        max_tokens: 4096,
+        response_format: { type: "json_object" },
+      });
+      if (usage) usage.workers_ai = Number(usage.workers_ai || 0) + 1;
+      return parseJsonModelResponse(result?.response || result);
+    } catch (error) {
+      workersAiError = error;
+      console.warn(
+        JSON.stringify({
+          event: "flowx_model_fallback",
+          from: "cloudflare_workers_ai",
+          to: "deepseek",
+          error: error.message || "未知错误",
+        }),
+      );
+    }
+  }
+
   try {
-    const result = await env.AI.run(WORKERS_AI_MODEL, {
-      messages,
-      temperature,
-      max_tokens: 4096,
-      response_format: { type: "json_object" },
-    });
-    return parseJsonModelResponse(result?.response || result);
-  } catch (fallbackError) {
+    return await runDeepSeekJson(messages, key, temperature, usage);
+  } catch (deepseekError) {
     throw new Error(
-      `${primaryError?.message || "DeepSeek 不可用"}；Cloudflare AI 备用模型也未成功：${fallbackError.message || "未知错误"}`,
+      `Cloudflare Workers AI 未成功：${workersAiError?.message || "未知错误"}；DeepSeek 备用模型也未成功：${deepseekError.message || "未知错误"}`,
     );
   }
 }
@@ -1366,6 +1411,77 @@ function articleStructure(body) {
     intro: String(introMatch?.[1] || "").replace(/\s/g, ""),
     expert: String(expertMatch?.[1] || "").replace(/\s/g, ""),
   };
+}
+
+function insertAnalysisBeforeClosing(body, addition) {
+  const structured = ensureArticleStructure(body);
+  const paragraphs = structured
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const closing = paragraphs.length > 1 ? paragraphs.pop() : "";
+  const cleanAddition = stripHighlightMarkup(addition)
+    .replace(
+      /^(?:【?补充分析】?|补充正文|正文补充|导语|结语|总结)\s*[：:]?\s*/,
+      "",
+    )
+    .trim();
+  if (!cleanAddition) return structured;
+  return [...paragraphs, cleanAddition, closing].filter(Boolean).join("\n\n");
+}
+
+async function expandDraftToMinimum(
+  draft,
+  material,
+  track,
+  key,
+  env,
+  usage,
+  originalMessages,
+) {
+  let body = ensureArticleStructure(draft.body);
+  for (
+    let attempt = 0;
+    attempt < 2 && articleStructure(body).length < ARTICLE_MIN_CHARACTERS;
+    attempt += 1
+  ) {
+    const missing = ARTICLE_MIN_CHARACTERS - articleStructure(body).length;
+    const expanded = await runJsonModel(
+      [
+        {
+          role: "system",
+          content: `你是中文内容平台资深编辑，只返回JSON。当前${track}稿件篇幅不足。只补充事实分析正文，不要重写导语，不要写结语，不要虚构资料外的数字、日期、人物、机构或结论。补充内容必须紧扣给定资料，并与已有正文避免重复。`,
+        },
+        {
+          role: "user",
+          content: `稿件还缺至少${Math.max(350, missing + 180)}个中文汉字。请充分解释事件背景、影响链条、不同主体的处境和行业逻辑，返回 {\"addition\":\"\"}。\n已有正文：${stripHighlightMarkup(body).slice(0, 2400)}\n资料：${material.slice(0, 4200)}`,
+        },
+      ],
+      key,
+      0.45,
+      env,
+      usage,
+    );
+    body = insertAnalysisBeforeClosing(
+      body,
+      expanded.addition || expanded.body || "",
+    );
+  }
+  if (articleStructure(body).length >= ARTICLE_MIN_CHARACTERS)
+    return { ...draft, body };
+  if (!key)
+    throw new Error(
+      `Cloudflare Workers AI 生成正文不足${ARTICLE_MIN_CHARACTERS}字，且未配置 DeepSeek 备用 Key`,
+    );
+  console.warn(
+    JSON.stringify({
+      event: "flowx_model_quality_fallback",
+      from: "cloudflare_workers_ai",
+      to: "deepseek",
+      reason: `article_below_${ARTICLE_MIN_CHARACTERS}_characters`,
+    }),
+  );
+  return runDeepSeekJson(originalMessages, key, 0.8, usage);
 }
 
 function shortenParagraph(text, limit) {
@@ -1494,7 +1610,7 @@ function ensureHighlights(body) {
   return highlighted;
 }
 
-async function qualityCheck(article, key, env) {
+async function qualityCheck(article, key, env, usage = null) {
   const localProblems = [];
   const structureProblems = [];
   if (article.title.length > 30)
@@ -1528,7 +1644,7 @@ async function qualityCheck(article, key, env) {
     localProblems.push(`核心信息加粗不足（当前${highlightCount}处）`);
   if (highlightCount > 6)
     localProblems.push(`核心信息加粗过多（当前${highlightCount}处）`);
-  const ai = await deepseek(
+  const ai = await runJsonModel(
     [
       {
         role: "system",
@@ -1543,6 +1659,7 @@ async function qualityCheck(article, key, env) {
     key,
     0.2,
     env,
+    usage,
   );
   const adjustedScore = Math.max(
     0,
@@ -1695,6 +1812,7 @@ async function generateOne(item, env, email) {
   const pexelsKey = await getConfig(env, email, "PEXELS_API_KEY");
   if ((!deepseekKey && !env.AI) || (!tavilyKey && !bochaKey))
     throw new Error("请至少配置 Tavily 或博查搜索 Key，并确保写作模型可用");
+  const modelUsage = { workers_ai: 0, deepseek: 0 };
   const search = await generationStage("素材检索", () =>
     searchWithFallback(item.title, tavilyKey, bochaKey),
   );
@@ -1704,21 +1822,34 @@ async function generateOne(item, env, email) {
   if (!material.trim())
     throw new Error("搜索源没有返回可用素材，请检查 Tavily 或博查 Key");
   const track = TRACKS[item.track_key]?.name || item.track || "综合";
-  const draft = await generationStage("正文生成", () =>
-    deepseek(
-      [
-        {
-          role: "system",
-          content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
-        },
-        {
-          role: "user",
-          content: `围绕选题写一篇800到1500字的中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。另给出3条用于 Pexels 配图检索的具体英文短语，每条2到6个可视觉化词语，必须分别紧扣事件主体、地点或行业场景，不得使用与主题无关的泛化词。返回 {\"title\":\"\",\"body\":\"\",\"image_queries\":[\"\",\"\",\"\"]}。\n选题：${item.title}\n${material}`,
-        },
-      ],
+  const draftMessages = [
+    {
+      role: "system",
+      content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500个中文汉字，任何情况下都不得超过1500字，建议完整展开到1000至1400字，绝不能用短摘要代替正文。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
+    },
+    {
+      role: "user",
+      content: `围绕选题写一篇800到1500字的完整中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、充分展开的事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。另给出3条用于 Pexels 配图检索的具体英文短语，每条2到6个可视觉化词语，必须分别紧扣事件主体、地点或行业场景，不得使用与主题无关的泛化词。返回 {\"title\":\"\",\"body\":\"\",\"image_queries\":[\"\",\"\",\"\"]}。\n选题：${item.title}\n${material}`,
+    },
+  ];
+  let draft = await generationStage("正文生成", () =>
+    runJsonModel(
+      draftMessages,
       deepseekKey,
       0.8,
       env,
+      modelUsage,
+    ),
+  );
+  draft = await generationStage("正文扩写", () =>
+    expandDraftToMinimum(
+      draft,
+      material,
+      track,
+      deepseekKey,
+      env,
+      modelUsage,
+      draftMessages,
     ),
   );
   const article = {
@@ -1733,16 +1864,21 @@ async function generateOne(item, env, email) {
   };
   if (article.body.length < 50) throw new Error("模型返回正文过短");
   const qc = await generationStage("质量检查", () =>
-    qualityCheck(article, deepseekKey, env),
+    qualityCheck(article, deepseekKey, env, modelUsage),
   );
   article.image_urls = await pexelsImages(
     article,
     pexelsKey,
     deepseekKey,
     env,
+    1,
+    modelUsage,
   );
   article.cover_url = article.image_urls[0] || "";
-  return saveArticle(env, email, article, qc);
+  return {
+    ...(await saveArticle(env, email, article, qc)),
+    model_usage: modelUsage,
+  };
 }
 
 async function handleApi(request, env, user) {
@@ -1895,15 +2031,6 @@ async function handleApi(request, env, user) {
     const body = await request.json();
     const items = Array.isArray(body.items) ? body.items.slice(0, 20) : [];
     if (!items.length) return json({ error: "至少选择一个选题" }, 400);
-    const deepseekTest = await validateApiKey(
-      "deepseek",
-      await getConfig(env, email, "DEEPSEEK_API_KEY"),
-    );
-    if (!deepseekTest.ok && !env.AI)
-      return json(
-        { error: `DeepSeek：${deepseekTest.message}，请先在设置中更换 Key` },
-        400,
-      );
     const results = new Array(items.length);
     let cursor = 0;
     const workerCount = Math.min(GENERATION_CONCURRENCY, items.length);
@@ -1939,10 +2066,19 @@ async function handleApi(request, env, user) {
         }
       }),
     );
+    const modelUsage = results.reduce(
+      (total, result) => ({
+        workers_ai:
+          total.workers_ai + Number(result?.model_usage?.workers_ai || 0),
+        deepseek: total.deepseek + Number(result?.model_usage?.deepseek || 0),
+      }),
+      { workers_ai: 0, deepseek: 0 },
+    );
     return json({
       results,
-      model_fallback: !deepseekTest.ok && Boolean(env.AI),
-      deepseek_status: deepseekTest,
+      model_primary: "cloudflare_workers_ai",
+      deepseek_fallback_used: modelUsage.deepseek > 0,
+      model_usage: modelUsage,
     });
   }
   if (path === "/api/articles" && request.method === "GET") {
@@ -2301,21 +2437,31 @@ async function handleApi(request, env, user) {
     if (!old) return json({ error: "稿件不存在" }, 404);
     const key = await getConfig(env, email, "DEEPSEEK_API_KEY");
     const problems = JSON.parse(old.qc_problems || "[]");
-    const revised = await deepseek(
-      [
-        {
-          role: "system",
-          content:
-            `你是中文内容编辑。只返回JSON。根据问题重写稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，在100字以内提前说明核心内容。末段要体现${old.track || "相关"}行业专业判断，给出总结、影响分析或趋势预测，但不要自称专家；根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。`,
-        },
-        {
-          role: "user",
-          content: `完成事实修订，将全文调整为800到1500字，并重新整理导语、正文、自然观点收束和重点加粗。返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
-        },
-      ],
+    const revisionMessages = [
+      {
+        role: "system",
+        content:
+          `你是中文内容编辑。只返回JSON。根据问题重写稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，在100字以内提前说明核心内容。末段要体现${old.track || "相关"}行业专业判断，给出总结、影响分析或趋势预测，但不要自称专家；根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。`,
+      },
+      {
+        role: "user",
+        content: `完成事实修订，将全文调整为800到1500字，并重新整理导语、正文、自然观点收束和重点加粗。返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
+      },
+    ];
+    let revised = await runJsonModel(
+      revisionMessages,
       key,
       0.4,
       env,
+    );
+    revised = await expandDraftToMinimum(
+      revised,
+      stripHighlightMarkup(old.body),
+      old.track || "相关",
+      key,
+      env,
+      null,
+      revisionMessages,
     );
     const article = {
       title: String(revised.title || old.title).trim(),

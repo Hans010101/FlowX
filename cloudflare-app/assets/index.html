@@ -1180,8 +1180,9 @@
               <h2>🔎 搜索与生成</h2>
               <p class="sub">
                 Tavily 优先搜索，博查在其不可用时自动兜底，Pexels
-                提供与时事主题相关的封面及正文配图，DeepSeek 负责写作、质检和定向优化。所有 Key
-                只绑定当前 Google 邮箱，永不回显。
+                提供与时事主题相关的封面及正文配图。Cloudflare Workers AI
+                免费额度优先完成写作、质检和定向优化，额度用尽或服务异常时再调用
+                DeepSeek。所有 Key 只绑定当前 Google 邮箱，永不回显。
               </p>
               <div class="chain">
                 <div class="node primary">
@@ -1199,14 +1200,19 @@
                   <div class="muted">图片素材</div>
                 </div>
                 <b style="color: var(--brand)">→</b>
+                <div class="node primary">
+                  <b>Workers AI</b>
+                  <div class="muted">生成 · 质检 · 优化 · 首选</div>
+                </div>
+                <b style="color: var(--brand)">→</b>
                 <div class="node">
                   <b>DeepSeek</b>
-                  <div class="muted">生成 · 质检 · 优化</div>
+                  <div class="muted">备用模型</div>
                 </div>
               </div>
               <div style="margin-top: 14px">
                 <div class="keyrow">
-                  <label>DeepSeek Key</label
+                  <label>DeepSeek 备用 Key</label
                   ><input
                     id="deepseekKey"
                     type="password"
@@ -1657,7 +1663,7 @@
           setGenerationNotice(
             fail ? "failed" : "done",
             `${ok.length} 篇稿件已进入稿库`,
-            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${d.model_fallback ? "。本轮已自动切换 Cloudflare AI 备用模型" : ""}。`,
+            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${d.deepseek_fallback_used ? "。Cloudflare AI 暂不可用的环节已自动切换 DeepSeek" : ""}。`,
           );
           toast(`${ok.length} 篇稿件已完成后台撰写与质检`);
         } catch (e) {
