@@ -6,9 +6,13 @@ const TAVILY_URL = "https://api.tavily.com/search";
 const BOCHA_URL = "https://api.bochaai.com/v1/web-search";
 const PEXELS_URL = "https://api.pexels.com/v1/search";
 const DEFAULT_DAILYHOT_URL = "https://api-hot.imsyy.top";
+const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const ARTICLE_RETENTION_HOURS = 36;
 const ARTICLE_MIN_CHARACTERS = 800;
 const ARTICLE_MAX_CHARACTERS = 1500;
+const HOTSPOT_REQUEST_TIMEOUT_MS = 9000;
+const GENERATION_CONCURRENCY = 2;
+const WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 const HOT_SOURCES = {
   baidu: { name: "百度", direct: true },
@@ -40,6 +44,19 @@ const TRACKS = {
       "消费",
       "食品",
       "快递",
+      "养老",
+      "退休",
+      "生育",
+      "住房",
+      "租房",
+      "学生",
+      "大学",
+      "出行",
+      "高温",
+      "台风",
+      "暴雨",
+      "外卖",
+      "民生",
     ],
   },
   tiyu: {
@@ -56,6 +73,14 @@ const TRACKS = {
       "比赛",
       "国足",
       "女足",
+      "网球",
+      "乒乓",
+      "羽毛球",
+      "排球",
+      "全明星",
+      "联赛",
+      "决赛",
+      "运动员",
     ],
   },
   yule: {
@@ -70,6 +95,13 @@ const TRACKS = {
       "演唱会",
       "娱乐圈",
       "导演",
+      "短剧",
+      "音乐",
+      "歌手",
+      "新片",
+      "开机",
+      "杀青",
+      "播出",
     ],
   },
   keji: {
@@ -86,6 +118,14 @@ const TRACKS = {
       "互联网",
       "发布会",
       "科技",
+      "大模型",
+      "算力",
+      "电池",
+      "新能源",
+      "自动驾驶",
+      "智能",
+      "数码",
+      "软件",
     ],
   },
   caiqi: {
@@ -102,6 +142,15 @@ const TRACKS = {
       "融资",
       "上市",
       "黄金",
+      "商业",
+      "产业",
+      "制造业",
+      "零售",
+      "品牌",
+      "营收",
+      "利率",
+      "汇率",
+      "关税",
     ],
   },
   shishi: {
@@ -117,6 +166,14 @@ const TRACKS = {
       "联合国",
       "回应",
       "通报",
+      "官方",
+      "发布",
+      "调查",
+      "冲突",
+      "选举",
+      "访问",
+      "谈判",
+      "安全",
     ],
   },
   jiankang: {
@@ -131,6 +188,12 @@ const TRACKS = {
       "养生",
       "睡眠",
       "减肥",
+      "中暑",
+      "疫苗",
+      "营养",
+      "急救",
+      "心理",
+      "感染",
     ],
   },
   lishi: {
@@ -151,6 +214,17 @@ const json = (data, status = 200) =>
       "cache-control": "no-store",
     },
   });
+
+function fetchWithTimeout(
+  input,
+  init = {},
+  timeoutMs = HOTSPOT_REQUEST_TIMEOUT_MS,
+) {
+  return fetch(input, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(timeoutMs),
+  });
+}
 
 function htmlEscape(value) {
   return String(value || "").replace(
@@ -465,7 +539,7 @@ async function fetchDirectSource(source) {
   const headers = { "user-agent": "Mozilla/5.0 Chrome/125 Safari/537.36" };
   const items = [];
   if (source === "baidu") {
-    const response = await fetch(BAIDU_URL, { headers });
+    const response = await fetchWithTimeout(BAIDU_URL, { headers });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     const rows = data?.data?.cards?.flatMap((c) => c.content || []) || [];
@@ -488,7 +562,7 @@ async function fetchDirectSource(source) {
       }
     }
   } else if (source === "toutiao") {
-    const response = await fetch(TOUTIAO_URL, { headers });
+    const response = await fetchWithTimeout(TOUTIAO_URL, { headers });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     const rows = data?.data || [];
@@ -505,9 +579,12 @@ async function fetchDirectSource(source) {
         });
     }
   } else if (source === "weibo") {
-    const response = await fetch("https://weibo.com/ajax/side/hotSearch", {
-      headers: { ...headers, referer: "https://weibo.com/" },
-    });
+    const response = await fetchWithTimeout(
+      "https://weibo.com/ajax/side/hotSearch",
+      {
+        headers: { ...headers, referer: "https://weibo.com/" },
+      },
+    );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const rows = (await response.json())?.data?.realtime || [];
     for (const row of rows.slice(0, 30)) {
@@ -521,7 +598,7 @@ async function fetchDirectSource(source) {
         });
     }
   } else if (source === "zhihu") {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://api.zhihu.com/topstory/hot-lists/total?limit=50",
       { headers },
     );
@@ -543,7 +620,7 @@ async function fetchDirectSource(source) {
         });
     }
   } else if (source === "bilibili") {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://api.bilibili.com/x/web-interface/popular?ps=30&pn=1",
       {
         headers: {
@@ -565,7 +642,7 @@ async function fetchDirectSource(source) {
         });
     }
   } else if (source === "thepaper") {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar",
       { headers },
     );
@@ -582,7 +659,7 @@ async function fetchDirectSource(source) {
         });
     }
   } else if (source === "36kr") {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://gateway.36kr.com/api/mis/nav/home/nav/rank/hot",
       {
         method: "POST",
@@ -610,14 +687,14 @@ async function fetchDirectSource(source) {
         });
     }
   } else if (source === "douyin") {
-    const cookieResponse = await fetch(
+    const cookieResponse = await fetchWithTimeout(
       "https://www.douyin.com/passport/general/login_guiding_strategy/?aid=6383",
       { headers },
     );
     const token = (cookieResponse.headers.get("set-cookie") || "").match(
       /passport_csrf_token=([^;]+)/,
     )?.[1];
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://www.douyin.com/aweme/v1/web/hot/search/list/?device_platform=webapp&aid=6383&channel=channel_pc_web&detail_list=1",
       {
         headers: {
@@ -644,7 +721,7 @@ async function fetchDirectSource(source) {
 }
 
 async function fetchDailyHotSource(baseUrl, source) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(source)}`,
     { headers: { "user-agent": "Mozilla/5.0 Chrome/125 Safari/537.36" } },
   );
@@ -731,10 +808,15 @@ async function fetchHotspots(env, email) {
     }),
   );
   const items = settled.flatMap((result) => result.items);
-  const hiddenRows = await env.DB.prepare(
-    "SELECT topic_key FROM user_hidden_topics WHERE owner_email=?",
+  const expiredHidden = await env.DB.prepare(
+    "DELETE FROM user_hidden_topics WHERE owner_email=? AND datetime(hidden_at) <= datetime('now', ?)",
   )
-    .bind(email)
+    .bind(email, `-${ARTICLE_RETENTION_HOURS} hours`)
+    .run();
+  const hiddenRows = await env.DB.prepare(
+    "SELECT topic_key FROM user_hidden_topics WHERE owner_email=? AND datetime(hidden_at) > datetime('now', ?)",
+  )
+    .bind(email, `-${ARTICLE_RETENTION_HOURS} hours`)
     .all();
   const hidden = new Set((hiddenRows.results || []).map((row) => row.topic_key));
   const seen = new Set();
@@ -753,6 +835,13 @@ async function fetchHotspots(env, email) {
   }
   return {
     total: items.length,
+    available: Object.values(tracks).reduce(
+      (total, track) => total + track.items.length,
+      0,
+    ),
+    hidden_active: hidden.size,
+    hidden_expired: Number(expiredHidden?.meta?.changes || 0),
+    enabled_tracks: enabledTracks.map((key) => TRACKS[key]?.name).filter(Boolean),
     tracks,
     base_url: baseUrl,
     sources: settled.map((result) => ({
@@ -864,11 +953,11 @@ function normalizeImageQueries(value) {
   ].slice(0, 3);
 }
 
-async function imageSearchQueries(article, deepseekKey) {
+async function imageSearchQueries(article, deepseekKey, env) {
   const supplied = normalizeImageQueries(article.image_queries);
   if (supplied.length >= 2) return supplied;
   let queries = supplied;
-  if (deepseekKey) {
+  if (deepseekKey || env?.AI) {
     try {
       const result = await deepseek(
         [
@@ -890,6 +979,7 @@ async function imageSearchQueries(article, deepseekKey) {
         ],
         deepseekKey,
         0.2,
+        env,
       );
       queries = normalizeImageQueries(result.queries);
     } catch {}
@@ -930,8 +1020,8 @@ async function pexelsSearch(query, pexelsKey, page = 1) {
   }
 }
 
-async function rankPexelsCandidates(article, candidates, deepseekKey) {
-  if (!deepseekKey || candidates.length < 2) return [];
+async function rankPexelsCandidates(article, candidates, deepseekKey, env) {
+  if ((!deepseekKey && !env?.AI) || candidates.length < 2) return [];
   try {
     const result = await deepseek(
       [
@@ -957,6 +1047,7 @@ async function rankPexelsCandidates(article, candidates, deepseekKey) {
       ],
       deepseekKey,
       0.1,
+      env,
     );
     const selectedIds = new Set(
       (Array.isArray(result.selected_ids) ? result.selected_ids : [])
@@ -969,9 +1060,15 @@ async function rankPexelsCandidates(article, candidates, deepseekKey) {
   }
 }
 
-async function pexelsImages(article, pexelsKey, deepseekKey, page = 1) {
+async function pexelsImages(
+  article,
+  pexelsKey,
+  deepseekKey,
+  env,
+  page = 1,
+) {
   if (!pexelsKey) return normalizeImageUrls([], article.cover_url);
-  const queries = await imageSearchQueries(article, deepseekKey);
+  const queries = await imageSearchQueries(article, deepseekKey, env);
   const groups = await Promise.all(
     queries.map((query) => pexelsSearch(query, pexelsKey, page)),
   );
@@ -986,6 +1083,7 @@ async function pexelsImages(article, pexelsKey, deepseekKey, page = 1) {
     article,
     candidates,
     deepseekKey,
+    env,
   );
   if (ranked.length)
     return normalizeImageUrls(ranked.map((photo) => photo.url));
@@ -1031,10 +1129,24 @@ async function validateApiKey(provider, key) {
   if (!key) return { ok: false, provider, message: "未配置" };
   try {
     let response;
+    let responseData = null;
     if (provider === "deepseek") {
-      response = await fetch("https://api.deepseek.com/models", {
-        headers: { authorization: `Bearer ${key}` },
+      response = await fetch(DEEPSEEK_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: DEEPSEEK_MODEL,
+          messages: [{ role: "user", content: '只返回 JSON：{"ok":true}' }],
+          thinking: { type: "disabled" },
+          temperature: 0,
+          max_tokens: 12,
+          response_format: { type: "json_object" },
+        }),
       });
+      responseData = await response.clone().json().catch(() => null);
     } else if (provider === "tavily") {
       response = await fetch(TAVILY_URL, {
         method: "POST",
@@ -1067,11 +1179,14 @@ async function validateApiKey(provider, key) {
     if (response?.ok) return { ok: true, provider, message: "连接正常" };
     const status = response?.status || 0;
     const message =
-      status === 401 || status === 403
+      provider === "deepseek" && status === 402
+        ? "余额不足或账户欠费"
+        : status === 401 || status === 403
         ? "Key 无效或无权限"
         : status === 429
           ? "额度或频率已受限"
-          : `连接失败（HTTP ${status || "未知"}）`;
+          : responseData?.error?.message ||
+            `连接失败（HTTP ${status || "未知"}）`;
     return { ok: false, provider, message };
   } catch {
     return { ok: false, provider, message: `${label} 网络连接失败` };
@@ -1086,30 +1201,91 @@ async function validateStoredApiKeys(env, email) {
   );
 }
 
-async function deepseek(messages, key, temperature = 0.7) {
-  const response = await fetch(DEEPSEEK_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
+function parseJsonModelResponse(raw) {
+  const source = String(raw || "")
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/^```json\s*|\s*```$/g, "")
+    .trim();
+  try {
+    return JSON.parse(source || "{}");
+  } catch {
+    const start = source.indexOf("{");
+    const end = source.lastIndexOf("}");
+    if (start >= 0 && end > start)
+      return JSON.parse(source.slice(start, end + 1));
+    throw new Error("模型没有返回有效 JSON");
+  }
+}
+
+function providerErrorMessage(status, data) {
+  if (status === 401 || status === 403)
+    return "DeepSeek Key 无效，请到设置中重新填写并测试连接";
+  if (status === 402)
+    return "DeepSeek 余额不足或账户欠费";
+  if (status === 429) return "DeepSeek 请求过于频繁或额度已受限";
+  return data?.error?.message || `DeepSeek 调用失败：HTTP ${status}`;
+}
+
+async function deepseek(messages, key, temperature = 0.7, env = null) {
+  let primaryError = key ? null : new Error("DeepSeek 未配置");
+  if (key) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetchWithTimeout(
+          DEEPSEEK_URL,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+              model: DEEPSEEK_MODEL,
+              messages,
+              thinking: { type: "disabled" },
+              temperature,
+              response_format: { type: "json_object" },
+            }),
+          },
+          45000,
+        );
+        const data = await response.json();
+        if (response.ok)
+          return parseJsonModelResponse(
+            data?.choices?.[0]?.message?.content || "{}",
+          );
+        primaryError = new Error(providerErrorMessage(response.status, data));
+        if (
+          attempt === 0 &&
+          (response.status === 429 || response.status >= 500)
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          continue;
+        }
+        break;
+      } catch (error) {
+        primaryError = error;
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+      }
+    }
+  }
+  if (!env?.AI) throw primaryError || new Error("没有可用的写作模型");
+  try {
+    const result = await env.AI.run(WORKERS_AI_MODEL, {
       messages,
       temperature,
+      max_tokens: 4096,
       response_format: { type: "json_object" },
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403)
-      throw new Error("DeepSeek Key 无效，请到设置中重新填写并测试连接");
+    });
+    return parseJsonModelResponse(result?.response || result);
+  } catch (fallbackError) {
     throw new Error(
-      data?.error?.message || `DeepSeek 调用失败：${response.status}`,
+      `${primaryError?.message || "DeepSeek 不可用"}；Cloudflare AI 备用模型也未成功：${fallbackError.message || "未知错误"}`,
     );
   }
-  const raw = data?.choices?.[0]?.message?.content || "{}";
-  return JSON.parse(raw.replace(/^```json\s*|\s*```$/g, ""));
 }
 
 function stripHighlightMarkup(body) {
@@ -1318,7 +1494,7 @@ function ensureHighlights(body) {
   return highlighted;
 }
 
-async function qualityCheck(article, key) {
+async function qualityCheck(article, key, env) {
   const localProblems = [];
   const structureProblems = [];
   if (article.title.length > 30)
@@ -1366,6 +1542,7 @@ async function qualityCheck(article, key) {
     ],
     key,
     0.2,
+    env,
   );
   const adjustedScore = Math.max(
     0,
@@ -1491,6 +1668,9 @@ async function purgeExpiredContent(env) {
     env.DB.prepare(
       "DELETE FROM articles WHERE datetime(created_at) <= datetime('now', ?)",
     ).bind(cutoff),
+    env.DB.prepare(
+      "DELETE FROM user_hidden_topics WHERE datetime(hidden_at) <= datetime('now', ?)",
+    ).bind(cutoff),
   ]);
   return results.reduce(
     (total, result) => total + Number(result?.meta?.changes || 0),
@@ -1498,33 +1678,48 @@ async function purgeExpiredContent(env) {
   );
 }
 
+async function generationStage(stage, action) {
+  try {
+    return await action();
+  } catch (error) {
+    const wrapped = new Error(`${stage}失败：${error.message || "未知错误"}`);
+    wrapped.stage = stage;
+    throw wrapped;
+  }
+}
+
 async function generateOne(item, env, email) {
   const deepseekKey = await getConfig(env, email, "DEEPSEEK_API_KEY");
   const tavilyKey = await getConfig(env, email, "TAVILY_API_KEY");
   const bochaKey = await getConfig(env, email, "BOCHA_API_KEY");
   const pexelsKey = await getConfig(env, email, "PEXELS_API_KEY");
-  if (!deepseekKey || (!tavilyKey && !bochaKey))
-    throw new Error("请先配置 DeepSeek，并至少配置 Tavily 或博查搜索 Key");
-  const search = await searchWithFallback(item.title, tavilyKey, bochaKey);
+  if ((!deepseekKey && !env.AI) || (!tavilyKey && !bochaKey))
+    throw new Error("请至少配置 Tavily 或博查搜索 Key，并确保写作模型可用");
+  const search = await generationStage("素材检索", () =>
+    searchWithFallback(item.title, tavilyKey, bochaKey),
+  );
   const material = search.results
     .map((r, i) => `【资料${i + 1}】${r.title || ""}\n${r.content || ""}`)
     .join("\n\n");
   if (!material.trim())
     throw new Error("搜索源没有返回可用素材，请检查 Tavily 或博查 Key");
   const track = TRACKS[item.track_key]?.name || item.track || "综合";
-  const draft = await deepseek(
-    [
-      {
-        role: "system",
-        content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
-      },
-      {
-        role: "user",
-        content: `围绕选题写一篇800到1500字的中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。另给出3条用于 Pexels 配图检索的具体英文短语，每条2到6个可视觉化词语，必须分别紧扣事件主体、地点或行业场景，不得使用与主题无关的泛化词。返回 {\"title\":\"\",\"body\":\"\",\"image_queries\":[\"\",\"\",\"\"]}。\n选题：${item.title}\n${material}`,
-      },
-    ],
-    deepseekKey,
-    0.8,
+  const draft = await generationStage("正文生成", () =>
+    deepseek(
+      [
+        {
+          role: "system",
+          content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
+        },
+        {
+          role: "user",
+          content: `围绕选题写一篇800到1500字的中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。另给出3条用于 Pexels 配图检索的具体英文短语，每条2到6个可视觉化词语，必须分别紧扣事件主体、地点或行业场景，不得使用与主题无关的泛化词。返回 {\"title\":\"\",\"body\":\"\",\"image_queries\":[\"\",\"\",\"\"]}。\n选题：${item.title}\n${material}`,
+        },
+      ],
+      deepseekKey,
+      0.8,
+      env,
+    ),
   );
   const article = {
     title: String(draft.title || item.title)
@@ -1537,8 +1732,15 @@ async function generateOne(item, env, email) {
     image_queries: normalizeImageQueries(draft.image_queries),
   };
   if (article.body.length < 50) throw new Error("模型返回正文过短");
-  const qc = await qualityCheck(article, deepseekKey);
-  article.image_urls = await pexelsImages(article, pexelsKey, deepseekKey);
+  const qc = await generationStage("质量检查", () =>
+    qualityCheck(article, deepseekKey, env),
+  );
+  article.image_urls = await pexelsImages(
+    article,
+    pexelsKey,
+    deepseekKey,
+    env,
+  );
   article.cover_url = article.image_urls[0] || "";
   return saveArticle(env, email, article, qc);
 }
@@ -1697,14 +1899,14 @@ async function handleApi(request, env, user) {
       "deepseek",
       await getConfig(env, email, "DEEPSEEK_API_KEY"),
     );
-    if (!deepseekTest.ok)
+    if (!deepseekTest.ok && !env.AI)
       return json(
         { error: `DeepSeek：${deepseekTest.message}，请先在设置中更换 Key` },
         400,
       );
     const results = new Array(items.length);
     let cursor = 0;
-    const workerCount = Math.min(4, items.length);
+    const workerCount = Math.min(GENERATION_CONCURRENCY, items.length);
     await Promise.all(
       Array.from({ length: workerCount }, async () => {
         while (true) {
@@ -1718,16 +1920,30 @@ async function handleApi(request, env, user) {
             };
             await hideTopics(env, email, [item.title], "generated");
           } catch (error) {
+            console.error(
+              JSON.stringify({
+                event: "flowx_generation_failed",
+                owner: email,
+                title: String(item.title || "").slice(0, 120),
+                stage: error.stage || "生成",
+                error: error.message || "未知错误",
+              }),
+            );
             results[index] = {
               ok: false,
               title: item.title,
+              stage: error.stage || "生成",
               error: error.message,
             };
           }
         }
       }),
     );
-    return json({ results });
+    return json({
+      results,
+      model_fallback: !deepseekTest.ok && Boolean(env.AI),
+      deepseek_status: deepseekTest,
+    });
   }
   if (path === "/api/articles" && request.method === "GET") {
     const rows = await env.DB.prepare(
@@ -2011,7 +2227,7 @@ async function handleApi(request, env, user) {
     if (article.title.length < 4 || article.body.length < 50)
       return json({ error: "标题至少4字，正文至少50字" }, 400);
     const key = await getConfig(env, email, "DEEPSEEK_API_KEY");
-    const qc = await qualityCheck(article, key);
+    const qc = await qualityCheck(article, key, env);
     return json({
       ok: true,
       ...(await saveArticle(
@@ -2050,6 +2266,7 @@ async function handleApi(request, env, user) {
       article,
       pexelsKey,
       deepseekKey,
+      env,
       1 + Math.floor(Math.random() * 3),
     );
     if (!imageUrls.length)
@@ -2098,6 +2315,7 @@ async function handleApi(request, env, user) {
       ],
       key,
       0.4,
+      env,
     );
     const article = {
       title: String(revised.title || old.title).trim(),
@@ -2107,7 +2325,7 @@ async function handleApi(request, env, user) {
       cover_url: old.cover_url || "",
       image_urls: normalizeImageUrls(old.image_urls, old.cover_url),
     };
-    const qc = await qualityCheck(article, key);
+    const qc = await qualityCheck(article, key, env);
     return json({
       ok: true,
       ...(await saveArticle(

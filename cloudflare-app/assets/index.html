@@ -1542,8 +1542,14 @@
         try {
           const d = await api("/hotspots", { method: "POST", body: "{}" });
           renderSources(d.sources || []);
-          let html = "";
-          for (const [key, g] of Object.entries(d.tracks || {})) {
+          if (d.hidden_expired)
+            toast(`已自动释放 ${d.hidden_expired} 条超过 36 小时的旧热点`);
+          const enabledTrackNames = d.enabled_tracks || [];
+          let html =
+            `<div class="runsum"><strong>本轮可选 ${Number(d.available || 0)} 条</strong>` +
+            `<span class="muted">从 ${Number(d.total || 0)} 条原始热点中筛选 · 当前启用 ${enabledTrackNames.length} 个赛道：${esc(enabledTrackNames.join("、") || "未设置")}</span></div>`;
+          const trackGroups = Object.entries(d.tracks || {});
+          for (const [key, g] of trackGroups) {
             html +=
               `<div class="trackhd"><span class="tk">${esc(g.name)}</span><span class="muted">${g.items.length} 条</span><span class="ln"></span></div>` +
               g.items
@@ -1554,9 +1560,10 @@
                 )
                 .join("");
           }
+          if (!trackGroups.length)
+            html += '<div class="empty">当前赛道暂时没有可归类热点，可到设置中启用更多赛道</div>';
           $("#hotspotBox").className = "";
-          $("#hotspotBox").innerHTML =
-            html || '<div class="empty">暂时没有可归类热点</div>';
+          $("#hotspotBox").innerHTML = html;
           $$("#hotspotBox input").forEach(
             (x) =>
               (x.onchange = () => {
@@ -1626,6 +1633,22 @@
           const ready = ok.filter((x) => x.qc_level !== "red");
           const needsFix = ok.length - ready.length;
           const fail = results.length - ok.length;
+          const failureCounts = new Map();
+          results
+            .filter((result) => !result.ok)
+            .forEach((result) => {
+              const reason = String(
+                result.error || `${result.stage || "生成"}失败`,
+              ).slice(0, 160);
+              failureCounts.set(reason, (failureCounts.get(reason) || 0) + 1);
+            });
+          const failureDetail = [...failureCounts.entries()]
+            .slice(0, 4)
+            .map(
+              ([reason, count]) =>
+                `${count > 1 ? `${count} 篇：` : ""}${reason}`,
+            )
+            .join("；");
           results.forEach((result, index) => {
             if (result.ok) nodes[index]?.closest(".topic")?.remove();
           });
@@ -1634,7 +1657,7 @@
           setGenerationNotice(
             fail ? "failed" : "done",
             `${ok.length} 篇稿件已进入稿库`,
-            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败可返回选题重试` : ""}。`,
+            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${d.model_fallback ? "。本轮已自动切换 Cloudflare AI 备用模型" : ""}。`,
           );
           toast(`${ok.length} 篇稿件已完成后台撰写与质检`);
         } catch (e) {
