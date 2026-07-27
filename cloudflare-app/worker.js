@@ -934,7 +934,7 @@ async function fetchHotspots(env, email) {
       0,
     ),
     hidden_active: hidden.size,
-    hidden_expired: Number(expiredHidden?.meta?.changes || 0),
+    hidden_expired: 0,
     enabled_tracks: enabledTracks.map((key) => TRACKS[key]?.name).filter(Boolean),
     tracks,
     base_url: baseUrl,
