@@ -959,7 +959,7 @@ async function imageSearchQueries(article, deepseekKey, env, usage = null) {
   let queries = supplied;
   if (deepseekKey || env?.AI) {
     try {
-      const result = await runJsonModel(
+      const result = await runBasicJsonModel(
         [
           {
             role: "system",
@@ -1030,7 +1030,7 @@ async function rankPexelsCandidates(
 ) {
   if ((!deepseekKey && !env?.AI) || candidates.length < 2) return [];
   try {
-    const result = await runJsonModel(
+    const result = await runBasicJsonModel(
       [
         {
           role: "system",
@@ -1291,7 +1291,7 @@ async function runDeepSeekJson(messages, key, temperature = 0.7, usage = null) {
   throw lastError;
 }
 
-async function runJsonModel(
+async function runBasicJsonModel(
   messages,
   key,
   temperature = 0.7,
@@ -1328,7 +1328,7 @@ async function runJsonModel(
     return await runDeepSeekJson(messages, key, temperature, usage);
   } catch (deepseekError) {
     throw new Error(
-      `Cloudflare Workers AI 未成功：${workersAiError?.message || "未知错误"}；DeepSeek 备用模型也未成功：${deepseekError.message || "未知错误"}`,
+      `Cloudflare Workers AI 基础任务未成功：${workersAiError?.message || "未知错误"}；DeepSeek 基础任务兜底也未成功：${deepseekError.message || "未知错误"}`,
     );
   }
 }
@@ -1435,7 +1435,6 @@ async function expandDraftToMinimum(
   material,
   track,
   key,
-  env,
   usage,
   originalMessages,
 ) {
@@ -1446,7 +1445,7 @@ async function expandDraftToMinimum(
     attempt += 1
   ) {
     const missing = ARTICLE_MIN_CHARACTERS - articleStructure(body).length;
-    const expanded = await runJsonModel(
+    const expanded = await runDeepSeekJson(
       [
         {
           role: "system",
@@ -1459,7 +1458,6 @@ async function expandDraftToMinimum(
       ],
       key,
       0.45,
-      env,
       usage,
     );
     body = insertAnalysisBeforeClosing(
@@ -1469,15 +1467,10 @@ async function expandDraftToMinimum(
   }
   if (articleStructure(body).length >= ARTICLE_MIN_CHARACTERS)
     return { ...draft, body };
-  if (!key)
-    throw new Error(
-      `Cloudflare Workers AI 生成正文不足${ARTICLE_MIN_CHARACTERS}字，且未配置 DeepSeek 备用 Key`,
-    );
   console.warn(
     JSON.stringify({
-      event: "flowx_model_quality_fallback",
-      from: "cloudflare_workers_ai",
-      to: "deepseek",
+      event: "flowx_deepseek_draft_retry",
+      model: DEEPSEEK_MODEL,
       reason: `article_below_${ARTICLE_MIN_CHARACTERS}_characters`,
     }),
   );
@@ -1644,7 +1637,7 @@ async function qualityCheck(article, key, env, usage = null) {
     localProblems.push(`核心信息加粗不足（当前${highlightCount}处）`);
   if (highlightCount > 6)
     localProblems.push(`核心信息加粗过多（当前${highlightCount}处）`);
-  const ai = await runJsonModel(
+  const ai = await runBasicJsonModel(
     [
       {
         role: "system",
@@ -1810,9 +1803,12 @@ async function generateOne(item, env, email) {
   const tavilyKey = await getConfig(env, email, "TAVILY_API_KEY");
   const bochaKey = await getConfig(env, email, "BOCHA_API_KEY");
   const pexelsKey = await getConfig(env, email, "PEXELS_API_KEY");
-  if ((!deepseekKey && !env.AI) || (!tavilyKey && !bochaKey))
-    throw new Error("请至少配置 Tavily 或博查搜索 Key，并确保写作模型可用");
-  const modelUsage = { workers_ai: 0, deepseek: 0 };
+  if (!deepseekKey)
+    throw new Error("请先在设置中配置并验证 DeepSeek 写稿 Key");
+  if (!tavilyKey && !bochaKey)
+    throw new Error("请至少配置并验证 Tavily 或博查搜索 Key");
+  const draftingUsage = { workers_ai: 0, deepseek: 0 };
+  const basicUsage = { workers_ai: 0, deepseek: 0 };
   const search = await generationStage("素材检索", () =>
     searchWithFallback(item.title, tavilyKey, bochaKey),
   );
@@ -1829,16 +1825,15 @@ async function generateOne(item, env, email) {
     },
     {
       role: "user",
-      content: `围绕选题写一篇800到1500字的完整中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、充分展开的事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。另给出3条用于 Pexels 配图检索的具体英文短语，每条2到6个可视觉化词语，必须分别紧扣事件主体、地点或行业场景，不得使用与主题无关的泛化词。返回 {\"title\":\"\",\"body\":\"\",\"image_queries\":[\"\",\"\",\"\"]}。\n选题：${item.title}\n${material}`,
+      content: `围绕选题写一篇800到1500字的完整中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、充分展开的事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
     },
   ];
   let draft = await generationStage("正文生成", () =>
-    runJsonModel(
+    runDeepSeekJson(
       draftMessages,
       deepseekKey,
       0.8,
-      env,
-      modelUsage,
+      draftingUsage,
     ),
   );
   draft = await generationStage("正文扩写", () =>
@@ -1847,8 +1842,7 @@ async function generateOne(item, env, email) {
       material,
       track,
       deepseekKey,
-      env,
-      modelUsage,
+      draftingUsage,
       draftMessages,
     ),
   );
@@ -1860,11 +1854,11 @@ async function generateOne(item, env, email) {
     track,
     source: item.source || "",
     research_provider: search.provider,
-    image_queries: normalizeImageQueries(draft.image_queries),
+    image_queries: [],
   };
   if (article.body.length < 50) throw new Error("模型返回正文过短");
   const qc = await generationStage("质量检查", () =>
-    qualityCheck(article, deepseekKey, env, modelUsage),
+    qualityCheck(article, deepseekKey, env, basicUsage),
   );
   article.image_urls = await pexelsImages(
     article,
@@ -1872,12 +1866,15 @@ async function generateOne(item, env, email) {
     deepseekKey,
     env,
     1,
-    modelUsage,
+    basicUsage,
   );
   article.cover_url = article.image_urls[0] || "";
   return {
     ...(await saveArticle(env, email, article, qc)),
-    model_usage: modelUsage,
+    model_usage: {
+      drafting: draftingUsage,
+      basic: basicUsage,
+    },
   };
 }
 
@@ -2067,17 +2064,29 @@ async function handleApi(request, env, user) {
       }),
     );
     const modelUsage = results.reduce(
-      (total, result) => ({
-        workers_ai:
-          total.workers_ai + Number(result?.model_usage?.workers_ai || 0),
-        deepseek: total.deepseek + Number(result?.model_usage?.deepseek || 0),
-      }),
-      { workers_ai: 0, deepseek: 0 },
+      (total, result) => {
+        for (const task of ["drafting", "basic"]) {
+          total[task].workers_ai += Number(
+            result?.model_usage?.[task]?.workers_ai || 0,
+          );
+          total[task].deepseek += Number(
+            result?.model_usage?.[task]?.deepseek || 0,
+          );
+        }
+        return total;
+      },
+      {
+        drafting: { workers_ai: 0, deepseek: 0 },
+        basic: { workers_ai: 0, deepseek: 0 },
+      },
     );
     return json({
       results,
-      model_primary: "cloudflare_workers_ai",
-      deepseek_fallback_used: modelUsage.deepseek > 0,
+      model_policy: {
+        drafting: "deepseek",
+        basic: "cloudflare_workers_ai",
+      },
+      basic_deepseek_fallback_used: modelUsage.basic.deepseek > 0,
       model_usage: modelUsage,
     });
   }
@@ -2436,6 +2445,8 @@ async function handleApi(request, env, user) {
       .first();
     if (!old) return json({ error: "稿件不存在" }, 404);
     const key = await getConfig(env, email, "DEEPSEEK_API_KEY");
+    if (!key)
+      return json({ error: "请先在设置中配置并验证 DeepSeek 写稿 Key" }, 400);
     const problems = JSON.parse(old.qc_problems || "[]");
     const revisionMessages = [
       {
@@ -2448,18 +2459,16 @@ async function handleApi(request, env, user) {
         content: `完成事实修订，将全文调整为800到1500字，并重新整理导语、正文、自然观点收束和重点加粗。返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
       },
     ];
-    let revised = await runJsonModel(
+    let revised = await runDeepSeekJson(
       revisionMessages,
       key,
       0.4,
-      env,
     );
     revised = await expandDraftToMinimum(
       revised,
       stripHighlightMarkup(old.body),
       old.track || "相关",
       key,
-      env,
       null,
       revisionMessages,
     );
