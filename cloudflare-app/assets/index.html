@@ -1664,7 +1664,7 @@
           setGenerationNotice(
             fail ? "failed" : "done",
             `${ok.length} 篇稿件已进入稿库`,
-            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${d.basic_deepseek_fallback_used ? "。部分基础任务因 Cloudflare AI 暂不可用，已由 DeepSeek 自动兜底" : ""}。`,
+            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${d.basic_deepseek_fallback_used ? "。部分基础任务因 Cloudflare AI 暂不可用，已由 DeepSeek 自动兜底" : ""}${d.topic_cleanup_warning ? `。${d.topic_cleanup_warning}` : ""}。`,
           );
           toast(`${ok.length} 篇稿件已完成后台撰写与质检`);
         } catch (e) {

@@ -13,6 +13,7 @@ const ARTICLE_MAX_CHARACTERS = 1000;
 const TITLE_SIMILARITY_LIMIT = 0.55;
 const HOTSPOT_REQUEST_TIMEOUT_MS = 9000;
 const GENERATION_CONCURRENCY = 2;
+const D1_MAX_RETRIES = 3;
 const WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 const HOT_SOURCES = {
@@ -498,22 +499,107 @@ function accountEmail(user) {
     .toLowerCase();
 }
 
+function d1ErrorText(error) {
+  return [error?.message, error?.cause?.message]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function isRetryableD1Error(error) {
+  const message = d1ErrorText(error).toLowerCase();
+  return [
+    "network connection lost",
+    "storage caused object to be reset",
+    "storage operation exceeded timeout which caused object to be reset",
+    "reset because its code was updated",
+    "internal error in d1 db storage caused object to be reset",
+    "cannot resolve d1 db due to transient issue",
+    "d1 db is overloaded",
+  ].some((fragment) => message.includes(fragment));
+}
+
+function d1RetryDelay(attempt) {
+  const base = Math.min(120 * 2 ** attempt, 1200);
+  const random = crypto.getRandomValues(new Uint32Array(1))[0];
+  return base + (random % Math.max(1, base));
+}
+
+async function withD1Retry(operation, operationName, maxRetries = D1_MAX_RETRIES) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isRetryableD1Error(error) || attempt >= maxRetries) throw error;
+      console.warn(
+        JSON.stringify({
+          event: "flowx_d1_retry",
+          operation: operationName,
+          attempt: attempt + 1,
+          error: d1ErrorText(error).slice(0, 300),
+        }),
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, d1RetryDelay(attempt)),
+      );
+    }
+  }
+}
+
+function createSerialTaskQueue() {
+  let tail = Promise.resolve();
+  return (task) => {
+    const result = tail.then(task, task);
+    tail = result.catch(() => {});
+    return result;
+  };
+}
+
+async function getConfigs(env, email, keys) {
+  const requested = new Set(keys);
+  const rows = await withD1Retry(
+    () =>
+      env.DB.prepare(
+        "SELECT key,value FROM user_config WHERE owner_email=?",
+      )
+        .bind(email)
+        .all(),
+    "read_account_config",
+  );
+  const configs = Object.fromEntries(keys.map((key) => [key, ""]));
+  await Promise.all(
+    (rows.results || [])
+      .filter((row) => requested.has(row.key))
+      .map(async (row) => {
+        configs[row.key] = await decrypt(row.value, env);
+      }),
+  );
+  return configs;
+}
+
 async function getConfig(env, email, key) {
-  const row = await env.DB.prepare(
-    "SELECT value FROM user_config WHERE owner_email=? AND key=?",
-  )
-    .bind(email, key)
-    .first();
+  const row = await withD1Retry(
+    () =>
+      env.DB.prepare(
+        "SELECT value FROM user_config WHERE owner_email=? AND key=?",
+      )
+        .bind(email, key)
+        .first(),
+    "read_account_config",
+  );
   return row ? decrypt(row.value, env) : "";
 }
 
 async function setConfig(env, email, key, value) {
   const encrypted = await encrypt(value, env);
-  await env.DB.prepare(
-    "INSERT INTO user_config(owner_email,key,value,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(owner_email,key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP",
-  )
-    .bind(email, key, encrypted)
-    .run();
+  await withD1Retry(
+    () =>
+      env.DB.prepare(
+        "INSERT INTO user_config(owner_email,key,value,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(owner_email,key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP",
+      )
+        .bind(email, key, encrypted)
+        .run(),
+    "save_account_config",
+  );
 }
 
 function classify(title) {
@@ -752,15 +838,19 @@ async function hideTopics(env, email, titles, reason = "manual") {
     .filter((row) => row.key)
     .slice(0, 100);
   if (!rows.length) return 0;
-  await env.DB.batch(
-    rows.map((row) =>
-      env.DB.prepare(
-        `INSERT INTO user_hidden_topics(owner_email,topic_key,title,reason,hidden_at)
-         VALUES(?,?,?,?,CURRENT_TIMESTAMP)
-         ON CONFLICT(owner_email,topic_key) DO UPDATE SET
-           title=excluded.title,reason=excluded.reason,hidden_at=CURRENT_TIMESTAMP`,
-      ).bind(email, row.key, row.title, reason),
-    ),
+  await withD1Retry(
+    () =>
+      env.DB.batch(
+        rows.map((row) =>
+          env.DB.prepare(
+            `INSERT INTO user_hidden_topics(owner_email,topic_key,title,reason,hidden_at)
+             VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+             ON CONFLICT(owner_email,topic_key) DO UPDATE SET
+               title=excluded.title,reason=excluded.reason,hidden_at=CURRENT_TIMESTAMP`,
+          ).bind(email, row.key, row.title, reason),
+        ),
+      ),
+    "hide_topics",
   );
   return rows.length;
 }
@@ -768,8 +858,13 @@ async function hideTopics(env, email, titles, reason = "manual") {
 async function fetchHotspots(env, email) {
   let enabledSources = DEFAULT_HOT_SOURCES;
   let enabledTracks = Object.keys(TRACKS);
-  const storedSources = await getConfig(env, email, "HOTSPOT_SOURCES");
-  const storedTracks = await getConfig(env, email, "ENABLED_TRACKS");
+  const configs = await getConfigs(env, email, [
+    "HOTSPOT_SOURCES",
+    "ENABLED_TRACKS",
+    "DAILYHOT_BASE_URL",
+  ]);
+  const storedSources = configs.HOTSPOT_SOURCES;
+  const storedTracks = configs.ENABLED_TRACKS;
   try {
     if (storedSources)
       enabledSources = JSON.parse(storedSources).filter((s) => HOT_SOURCES[s]);
@@ -779,8 +874,7 @@ async function fetchHotspots(env, email) {
       enabledTracks = JSON.parse(storedTracks).filter((s) => TRACKS[s]);
   } catch {}
   if (!enabledSources.length) enabledSources = ["baidu"];
-  const baseUrl =
-    (await getConfig(env, email, "DAILYHOT_BASE_URL")) || DEFAULT_DAILYHOT_URL;
+  const baseUrl = configs.DAILYHOT_BASE_URL || DEFAULT_DAILYHOT_URL;
   const settled = await Promise.all(
     enabledSources.map(async (source) => {
       try {
@@ -809,16 +903,15 @@ async function fetchHotspots(env, email) {
     }),
   );
   const items = settled.flatMap((result) => result.items);
-  const expiredHidden = await env.DB.prepare(
-    "DELETE FROM user_hidden_topics WHERE owner_email=? AND datetime(hidden_at) <= datetime('now', ?)",
-  )
-    .bind(email, `-${ARTICLE_RETENTION_HOURS} hours`)
-    .run();
-  const hiddenRows = await env.DB.prepare(
-    "SELECT topic_key FROM user_hidden_topics WHERE owner_email=? AND datetime(hidden_at) > datetime('now', ?)",
-  )
-    .bind(email, `-${ARTICLE_RETENTION_HOURS} hours`)
-    .all();
+  const hiddenRows = await withD1Retry(
+    () =>
+      env.DB.prepare(
+        "SELECT topic_key FROM user_hidden_topics WHERE owner_email=? AND datetime(hidden_at) > datetime('now', ?)",
+      )
+        .bind(email, `-${ARTICLE_RETENTION_HOURS} hours`)
+        .all(),
+    "read_hidden_topics",
+  );
   const hidden = new Set((hiddenRows.results || []).map((row) => row.topic_key));
   const seen = new Set();
   const tracks = {};
@@ -1975,18 +2068,12 @@ async function saveArticle(
     article.cover_url,
   );
   article.cover_url = article.image_urls[0] || "";
-  if (oldId && oldId !== id)
-    await env.DB.prepare(
-      "DELETE FROM user_articles WHERE owner_email=? AND id=?",
-    )
-      .bind(email, oldId)
-      .run();
-  await env.DB.prepare(
-    `INSERT INTO user_articles(owner_email,id,title,body,track,source,cover_url,image_urls,status,qc_score,qc_level,qc_problems,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)
-    ON CONFLICT(owner_email,id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,cover_url=excluded.cover_url,image_urls=excluded.image_urls,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`,
-  )
-    .bind(
+  const prepareUpsert = () =>
+    env.DB.prepare(
+      `INSERT INTO user_articles(owner_email,id,title,body,track,source,cover_url,image_urls,status,qc_score,qc_level,qc_problems,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)
+      ON CONFLICT(owner_email,id) DO UPDATE SET title=excluded.title,body=excluded.body,track=excluded.track,source=excluded.source,cover_url=excluded.cover_url,image_urls=excluded.image_urls,status=excluded.status,qc_score=excluded.qc_score,qc_level=excluded.qc_level,qc_problems=excluded.qc_problems,updated_at=CURRENT_TIMESTAMP`,
+    ).bind(
       email,
       id,
       article.title,
@@ -2000,8 +2087,21 @@ async function saveArticle(
       qc.level,
       JSON.stringify(qc.problems),
       originalCreatedAt,
-    )
-    .run();
+    );
+  await withD1Retry(
+    () => {
+      const upsert = prepareUpsert();
+      if (oldId && oldId !== id)
+        return env.DB.batch([
+          env.DB.prepare(
+            "DELETE FROM user_articles WHERE owner_email=? AND id=?",
+          ).bind(email, oldId),
+          upsert,
+        ]);
+      return upsert.run();
+    },
+    "save_article",
+  );
   const { source_material: _sourceMaterial, ...publicArticle } = article;
   return {
     id,
@@ -2015,43 +2115,47 @@ async function saveArticle(
 
 async function purgeExpiredContent(env) {
   const cutoff = `-${ARTICLE_RETENTION_HOURS} hours`;
-  const results = await env.DB.batch([
-    env.DB.prepare(
-      `DELETE FROM user_publications
-       WHERE NOT EXISTS (
-         SELECT 1 FROM user_articles current
-         WHERE current.owner_email=user_publications.owner_email
-           AND current.id=user_publications.article_id
-       ) OR EXISTS (
-         SELECT 1 FROM user_articles a
-         WHERE a.owner_email=user_publications.owner_email
-           AND a.id=user_publications.article_id
-           AND datetime(a.created_at) <= datetime('now', ?)
-       )`,
-    ).bind(cutoff),
-    env.DB.prepare(
-      `DELETE FROM user_publish_jobs
-       WHERE NOT EXISTS (
-         SELECT 1 FROM user_articles current
-         WHERE current.owner_email=user_publish_jobs.owner_email
-           AND current.id=user_publish_jobs.article_id
-       ) OR EXISTS (
-         SELECT 1 FROM user_articles a
-         WHERE a.owner_email=user_publish_jobs.owner_email
-           AND a.id=user_publish_jobs.article_id
-           AND datetime(a.created_at) <= datetime('now', ?)
-       )`,
-    ).bind(cutoff),
-    env.DB.prepare(
-      "DELETE FROM user_articles WHERE datetime(created_at) <= datetime('now', ?)",
-    ).bind(cutoff),
-    env.DB.prepare(
-      "DELETE FROM articles WHERE datetime(created_at) <= datetime('now', ?)",
-    ).bind(cutoff),
-    env.DB.prepare(
-      "DELETE FROM user_hidden_topics WHERE datetime(hidden_at) <= datetime('now', ?)",
-    ).bind(cutoff),
-  ]);
+  const results = await withD1Retry(
+    () =>
+      env.DB.batch([
+        env.DB.prepare(
+          `DELETE FROM user_publications
+           WHERE NOT EXISTS (
+             SELECT 1 FROM user_articles current
+             WHERE current.owner_email=user_publications.owner_email
+               AND current.id=user_publications.article_id
+           ) OR EXISTS (
+             SELECT 1 FROM user_articles a
+             WHERE a.owner_email=user_publications.owner_email
+               AND a.id=user_publications.article_id
+               AND datetime(a.created_at) <= datetime('now', ?)
+           )`,
+        ).bind(cutoff),
+        env.DB.prepare(
+          `DELETE FROM user_publish_jobs
+           WHERE NOT EXISTS (
+             SELECT 1 FROM user_articles current
+             WHERE current.owner_email=user_publish_jobs.owner_email
+               AND current.id=user_publish_jobs.article_id
+           ) OR EXISTS (
+             SELECT 1 FROM user_articles a
+             WHERE a.owner_email=user_publish_jobs.owner_email
+               AND a.id=user_publish_jobs.article_id
+               AND datetime(a.created_at) <= datetime('now', ?)
+           )`,
+        ).bind(cutoff),
+        env.DB.prepare(
+          "DELETE FROM user_articles WHERE datetime(created_at) <= datetime('now', ?)",
+        ).bind(cutoff),
+        env.DB.prepare(
+          "DELETE FROM articles WHERE datetime(created_at) <= datetime('now', ?)",
+        ).bind(cutoff),
+        env.DB.prepare(
+          "DELETE FROM user_hidden_topics WHERE datetime(hidden_at) <= datetime('now', ?)",
+        ).bind(cutoff),
+      ]),
+    "purge_expired_content",
+  );
   return results.reduce(
     (total, result) => total + Number(result?.meta?.changes || 0),
     0,
@@ -2081,11 +2185,11 @@ function buildDraftMessages(topicTitle, track, material) {
   ];
 }
 
-async function generateOne(item, env, email) {
-  const deepseekKey = await getConfig(env, email, "DEEPSEEK_API_KEY");
-  const tavilyKey = await getConfig(env, email, "TAVILY_API_KEY");
-  const bochaKey = await getConfig(env, email, "BOCHA_API_KEY");
-  const pexelsKey = await getConfig(env, email, "PEXELS_API_KEY");
+async function generateOne(item, env, email, configs, persistArticle) {
+  const deepseekKey = configs.DEEPSEEK_API_KEY;
+  const tavilyKey = configs.TAVILY_API_KEY;
+  const bochaKey = configs.BOCHA_API_KEY;
+  const pexelsKey = configs.PEXELS_API_KEY;
   if (!deepseekKey)
     throw new Error("请先在设置中配置并验证 DeepSeek 写稿 Key");
   if (!tavilyKey && !bochaKey)
@@ -2161,7 +2265,9 @@ async function generateOne(item, env, email) {
   );
   article.cover_url = article.image_urls[0] || "";
   return {
-    ...(await saveArticle(env, email, article, qc)),
+    ...(await generationStage("稿件入库", () =>
+      persistArticle(() => saveArticle(env, email, article, qc)),
+    )),
     model_usage: {
       drafting: draftingUsage,
       basic: basicUsage,
@@ -2173,14 +2279,6 @@ async function handleApi(request, env, user) {
   const url = new URL(request.url);
   const path = url.pathname;
   const email = accountEmail(user);
-  const contentMutation =
-    request.method !== "GET" &&
-    (/^\/api\/articles(?:\/|$)/.test(path) ||
-      path === "/api/revise" ||
-      path === "/api/publications" ||
-      /^\/api\/publish-jobs(?:\/|$)/.test(path));
-  if ((path === "/api/articles" && request.method === "GET") || contentMutation)
-    await purgeExpiredContent(env);
   if (path === "/api/health")
     return json({
       ok: true,
@@ -2319,7 +2417,33 @@ async function handleApi(request, env, user) {
     const body = await request.json();
     const items = Array.isArray(body.items) ? body.items.slice(0, 20) : [];
     if (!items.length) return json({ error: "至少选择一个选题" }, 400);
+    let generationConfigs;
+    try {
+      generationConfigs = await getConfigs(env, email, [
+        "DEEPSEEK_API_KEY",
+        "TAVILY_API_KEY",
+        "BOCHA_API_KEY",
+        "PEXELS_API_KEY",
+      ]);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "flowx_generation_config_failed",
+          owner: email,
+          error: d1ErrorText(error).slice(0, 300),
+        }),
+      );
+      return json(
+        {
+          error: isRetryableD1Error(error)
+            ? "Cloudflare 数据库短暂繁忙，系统已自动重试，请稍后再次撰稿"
+            : "读取账号配置失败，请刷新后重试",
+        },
+        503,
+      );
+    }
     const results = new Array(items.length);
+    const persistArticle = createSerialTaskQueue();
     let cursor = 0;
     const workerCount = Math.min(GENERATION_CONCURRENCY, items.length);
     await Promise.all(
@@ -2331,9 +2455,14 @@ async function handleApi(request, env, user) {
           try {
             results[index] = {
               ok: true,
-              ...(await generateOne(item, env, email)),
+              ...(await generateOne(
+                item,
+                env,
+                email,
+                generationConfigs,
+                persistArticle,
+              )),
             };
-            await hideTopics(env, email, [item.title], "generated");
           } catch (error) {
             console.error(
               JSON.stringify({
@@ -2348,12 +2477,34 @@ async function handleApi(request, env, user) {
               ok: false,
               title: item.title,
               stage: error.stage || "生成",
-              error: error.message,
+              error: isRetryableD1Error(error)
+                ? "Cloudflare 数据库短暂繁忙，系统已自动重试；该选题仍保留，可直接再次撰稿"
+                : error.message,
             };
           }
         }
       }),
     );
+    const completedTitles = items
+      .filter((_, index) => results[index]?.ok)
+      .map((item) => item.title);
+    let topicCleanupWarning = "";
+    if (completedTitles.length) {
+      try {
+        await hideTopics(env, email, completedTitles, "generated");
+      } catch (error) {
+        topicCleanupWarning =
+          "稿件已成功入库，但已写选题暂未自动隐藏，刷新热点时系统会再次过滤";
+        console.warn(
+          JSON.stringify({
+            event: "flowx_generated_topics_cleanup_failed",
+            owner: email,
+            count: completedTitles.length,
+            error: d1ErrorText(error).slice(0, 300),
+          }),
+        );
+      }
+    }
     const modelUsage = results.reduce(
       (total, result) => {
         for (const task of ["drafting", "basic"]) {
@@ -2379,14 +2530,19 @@ async function handleApi(request, env, user) {
       },
       basic_deepseek_fallback_used: modelUsage.basic.deepseek > 0,
       model_usage: modelUsage,
+      topic_cleanup_warning: topicCleanupWarning,
     });
   }
   if (path === "/api/articles" && request.method === "GET") {
-    const rows = await env.DB.prepare(
-      "SELECT *,datetime(created_at,'+36 hours') AS expires_at FROM user_articles WHERE owner_email=? ORDER BY created_at DESC LIMIT 500",
-    )
-      .bind(email)
-      .all();
+    const rows = await withD1Retry(
+      () =>
+        env.DB.prepare(
+          "SELECT *,datetime(created_at,'+36 hours') AS expires_at FROM user_articles WHERE owner_email=? AND datetime(created_at) > datetime('now', ?) ORDER BY created_at DESC LIMIT 500",
+        )
+          .bind(email, `-${ARTICLE_RETENTION_HOURS} hours`)
+          .all(),
+      "read_articles",
+    );
     return json({
       articles: (rows.results || []).map((article) => ({
         ...article,
