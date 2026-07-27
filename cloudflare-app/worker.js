@@ -8,8 +8,9 @@ const PEXELS_URL = "https://api.pexels.com/v1/search";
 const DEFAULT_DAILYHOT_URL = "https://api-hot.imsyy.top";
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const ARTICLE_RETENTION_HOURS = 36;
-const ARTICLE_MIN_CHARACTERS = 800;
-const ARTICLE_MAX_CHARACTERS = 1500;
+const ARTICLE_MIN_CHARACTERS = 600;
+const ARTICLE_MAX_CHARACTERS = 1000;
+const TITLE_SIMILARITY_LIMIT = 0.55;
 const HOTSPOT_REQUEST_TIMEOUT_MS = 9000;
 const GENERATION_CONCURRENCY = 2;
 const WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -973,6 +974,8 @@ async function imageSearchQueries(article, deepseekKey, env, usage = null) {
               String(article.title || "") +
               "\nTrack: " +
               String(article.track || "") +
+              "\nEditorial angle: " +
+              String(article.writing_angle || "") +
               "\nArticle excerpt: " +
               stripHighlightMarkup(article.body).slice(0, 1200),
           },
@@ -1044,6 +1047,8 @@ async function rankPexelsCandidates(
             String(article.title || "") +
             "\nTrack: " +
             String(article.track || "") +
+            "\nEditorial angle: " +
+            String(article.writing_angle || "") +
             "\nArticle excerpt: " +
             stripHighlightMarkup(article.body).slice(0, 900) +
             "\nCandidates: " +
@@ -1309,8 +1314,9 @@ async function runBasicJsonModel(
         max_tokens: 4096,
         response_format: { type: "json_object" },
       });
+      const parsed = parseJsonModelResponse(result?.response || result);
       if (usage) usage.workers_ai = Number(usage.workers_ai || 0) + 1;
-      return parseJsonModelResponse(result?.response || result);
+      return parsed;
     } catch (error) {
       workersAiError = error;
       console.warn(
@@ -1449,11 +1455,11 @@ async function expandDraftToMinimum(
       [
         {
           role: "system",
-          content: `你是中文内容平台资深编辑，只返回JSON。当前${track}稿件篇幅不足。只补充事实分析正文，不要重写导语，不要写结语，不要虚构资料外的数字、日期、人物、机构或结论。补充内容必须紧扣给定资料，并与已有正文避免重复。`,
+          content: `你是中文内容平台资深编辑，只返回JSON。当前${track}稿件篇幅不足。只补充能支撑文章核心观点的事实分析，不要重写导语，不要写结语，不要虚构资料外的数字、日期、人物、机构或结论。禁止逐句改写资料、堆砌背景或重复已有正文，要补足影响链条、利益关系、反常识之处或趋势信号。`,
         },
         {
           role: "user",
-          content: `稿件还缺至少${Math.max(350, missing + 180)}个中文汉字。请充分解释事件背景、影响链条、不同主体的处境和行业逻辑，返回 {\"addition\":\"\"}。\n已有正文：${stripHighlightMarkup(body).slice(0, 2400)}\n资料：${material.slice(0, 4200)}`,
+          content: `稿件还缺至少${Math.max(220, missing + 100)}个中文汉字。围绕已有观点补足最有价值的一层分析，返回 {\"addition\":\"\"}。\n已有正文：${stripHighlightMarkup(body).slice(0, 2000)}\n资料：${material.slice(0, 3600)}`,
         },
       ],
       key,
@@ -1475,6 +1481,61 @@ async function expandDraftToMinimum(
     }),
   );
   return runDeepSeekJson(originalMessages, key, 0.8, usage);
+}
+
+async function repairDraftIntegrity(
+  draft,
+  material,
+  track,
+  key,
+  usage,
+  originalMessages,
+) {
+  let current = draft;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    current = await expandDraftToMinimum(
+      current,
+      material,
+      track,
+      key,
+      usage,
+      originalMessages,
+    );
+    const body = finalizeArticleBody(current.body);
+    const unsupportedNumbers = unsupportedArabicNumbers(body, material);
+    const verbatimMatches = longVerbatimMatches(body, material);
+    if (!unsupportedNumbers.length && !verbatimMatches.length)
+      return { ...current, body };
+
+    current = {
+      ...current,
+      ...(await runDeepSeekJson(
+        [
+          {
+            role: "system",
+            content: `你是中文内容平台的原创性与事实编辑，只返回JSON。保持${track}稿件已经确定的核心角度，但必须整体重新组织有问题的段落，不能用同义词逐句替换。删除资料中不存在的数字、比例、金额、日期、统计区间和测算，不得添加任何新数字。与资料连续重复的表达要改成基于事实的独立分析。全文仍须为600到1000字，保留100字内导语、2到3层观点推进、自然观点收束及3到6处 **重点内容**。`,
+          },
+          {
+            role: "user",
+            content: `发现的问题：${[
+              unsupportedNumbers.length
+                ? `资料外数字：${unsupportedNumbers.join("、")}`
+                : "",
+              verbatimMatches.length
+                ? `${verbatimMatches.length}处连续表达与资料重复`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("；")}\n当前角度：${String(current.angle || "")}\n当前标题：${String(current.title || "")}\n当前正文：${body}\n参考资料：${material.slice(0, 4200)}\n返回 {"angle":"","title":"","body":""}。`,
+          },
+        ],
+        key,
+        0.45,
+        usage,
+      )),
+    };
+  }
+  return current;
 }
 
 function shortenParagraph(text, limit) {
@@ -1603,6 +1664,181 @@ function ensureHighlights(body) {
   return highlighted;
 }
 
+function normalizeTitleText(title) {
+  return String(title || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function titleBigrams(title) {
+  const normalized = normalizeTitleText(title);
+  if (normalized.length < 2) return new Set(normalized ? [normalized] : []);
+  return new Set(
+    Array.from(
+      { length: normalized.length - 1 },
+      (_, index) => normalized.slice(index, index + 2),
+    ),
+  );
+}
+
+function titleSimilarity(candidate, sourceTitle) {
+  const candidateText = normalizeTitleText(candidate);
+  const sourceText = normalizeTitleText(sourceTitle);
+  if (!candidateText || !sourceText) return 0;
+  if (candidateText === sourceText) return 1;
+  const candidateBigrams = titleBigrams(candidateText);
+  const sourceBigrams = titleBigrams(sourceText);
+  let intersection = 0;
+  for (const gram of candidateBigrams) {
+    if (sourceBigrams.has(gram)) intersection += 1;
+  }
+  const union = new Set([...candidateBigrams, ...sourceBigrams]).size || 1;
+  const jaccard = intersection / union;
+  const containment =
+    candidateText.includes(sourceText) || sourceText.includes(candidateText)
+      ? Math.min(candidateText.length, sourceText.length) /
+        Math.max(candidateText.length, sourceText.length)
+      : 0;
+  return Math.max(jaccard, containment * 0.9);
+}
+
+function titleAppealScore(title) {
+  let score = 0;
+  if (/[？?：:]/.test(title)) score += 2;
+  if (/\d|%|％/.test(title)) score += 1;
+  if (/背后|为何|不只是|真正|关键|意味着|拐点|信号|代价|机会|谁在|怎么/.test(title))
+    score += 3;
+  if (/重磅|震惊|突发|最新消息|引发关注|网友热议|冲上热搜/.test(title))
+    score -= 4;
+  return score;
+}
+
+function rankedTitleCandidates(draft, sourceTitle) {
+  const alternatives = Array.isArray(draft.alternative_titles)
+    ? draft.alternative_titles
+    : [];
+  return [
+    ...new Set(
+      [draft.title, ...alternatives]
+        .map((title) => String(title || "").trim())
+        .filter((title) => title.length >= 8 && title.length <= 30),
+    ),
+  ]
+    .map((title) => ({
+      title,
+      similarity: titleSimilarity(title, sourceTitle),
+      appeal: titleAppealScore(title),
+    }))
+    .sort((a, b) => {
+      const aSafe = a.similarity <= TITLE_SIMILARITY_LIMIT;
+      const bSafe = b.similarity <= TITLE_SIMILARITY_LIMIT;
+      if (aSafe !== bSafe) return aSafe ? -1 : 1;
+      if (aSafe)
+        return (
+          b.appeal - a.appeal ||
+          a.similarity - b.similarity ||
+          a.title.length - b.title.length
+        );
+      return a.similarity - b.similarity || b.appeal - a.appeal;
+    });
+}
+
+async function ensureDistinctTitle(
+  draft,
+  sourceTitle,
+  key,
+  usage = null,
+) {
+  let candidates = rankedTitleCandidates(draft, sourceTitle);
+  if (candidates[0]?.similarity <= TITLE_SIMILARITY_LIMIT)
+    return {
+      ...draft,
+      title: candidates[0].title,
+      title_similarity: Number(candidates[0].similarity.toFixed(3)),
+    };
+
+  const rewritten = await runDeepSeekJson(
+    [
+      {
+        role: "system",
+        content:
+          "你是内容平台标题编辑，只返回JSON。标题必须准确但不能复制、缩写或同义替换热点原标题。围绕文章独特观点重新命名，优先使用反差、影响、问题、信号、利益关系或未来变化制造阅读动力；不使用“重磅”“震惊”“引发关注”“网友热议”等模板化词语，不夸大、不写标题党，控制在8到30字。",
+      },
+      {
+        role: "user",
+        content: `热点原标题：${sourceTitle}\n文章角度：${String(draft.angle || "")}\n正文摘要：${stripHighlightMarkup(draft.body).slice(0, 600)}\n返回 {"title":"","alternative_titles":["",""]}。`,
+      },
+    ],
+    key,
+    0.75,
+    usage,
+  );
+  candidates = rankedTitleCandidates(
+    {
+      title: rewritten.title,
+      alternative_titles: [
+        ...(Array.isArray(rewritten.alternative_titles)
+          ? rewritten.alternative_titles
+          : []),
+        ...candidates.map((candidate) => candidate.title),
+      ],
+    },
+    sourceTitle,
+  );
+  const selected = candidates[0];
+  return {
+    ...draft,
+    title: selected?.title || String(draft.title || sourceTitle).slice(0, 30),
+    title_similarity: Number(
+      (selected ? selected.similarity : 1).toFixed(3),
+    ),
+  };
+}
+
+function longVerbatimMatches(body, sourceMaterial) {
+  const source = normalizeTitleText(sourceMaterial);
+  if (!source) return [];
+  return [
+    ...new Set(
+      stripHighlightMarkup(body)
+        .split(/[。！？\n]/)
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => normalizeTitleText(sentence).length >= 24)
+        .filter((sentence) =>
+          source.includes(normalizeTitleText(sentence)),
+        ),
+    ),
+  ].slice(0, 3);
+}
+
+function unsupportedArabicNumbers(body, sourceMaterial) {
+  const sourceNumbers = new Set(
+    String(sourceMaterial || "").match(/\d+(?:\.\d+)?/g) || [],
+  );
+  return [
+    ...new Set(
+      (stripHighlightMarkup(body).match(/\d+(?:\.\d+)?/g) || []).filter(
+        (number) => !sourceNumbers.has(number),
+      ),
+    ),
+  ].slice(0, 6);
+}
+
+function actualAiProblems(value) {
+  const statements = Array.isArray(value) ? value.map(String) : [];
+  return statements.filter((statement) => {
+    const hasDefect =
+      /但|不过|问题|不足|缺|未提供|无来源|建议|风险|错误|不一致|复述|同义|过于|编造|夸大|空泛|AI味明显/.test(
+        statement,
+      );
+    const positiveOnly =
+      /符合要求|差异明显|有吸引力|有独特观点|逻辑清晰|事实一致|无明显AI味|未使用|给出有增量/.test(
+        statement,
+      );
+    return hasDefect || !positiveOnly;
+  });
+}
+
 async function qualityCheck(article, key, env, usage = null) {
   const localProblems = [];
   const structureProblems = [];
@@ -1610,6 +1846,33 @@ async function qualityCheck(article, key, env, usage = null) {
     localProblems.push(`标题过长（${article.title.length}字）`);
   if (article.title.length < 8)
     localProblems.push(`标题过短（${article.title.length}字）`);
+  if (/重磅|震惊|突发|最新消息|引发关注|网友热议|冲上热搜/.test(article.title))
+    localProblems.push("标题使用模板化或夸张表达，吸引力不够自然");
+  if (article.origin_title) {
+    const similarity = titleSimilarity(article.title, article.origin_title);
+    if (similarity > TITLE_SIMILARITY_LIMIT)
+      structureProblems.push(
+        `标题与热点原标题过于相似（相似度${Math.round(similarity * 100)}%），需要换一个观点角度`,
+      );
+    if (String(article.writing_angle || "").trim().length < 8)
+      structureProblems.push("缺少明确、具体的差异化写作角度");
+  }
+  const verbatimMatches = longVerbatimMatches(
+    article.body,
+    article.source_material || "",
+  );
+  if (verbatimMatches.length)
+    structureProblems.push(
+      `正文存在${verbatimMatches.length}处与参考资料连续重复24字以上的表达，需要重新组织语言和论证`,
+    );
+  const unsupportedNumbers = unsupportedArabicNumbers(
+    article.body,
+    article.source_material || "",
+  );
+  if (article.source_material && unsupportedNumbers.length)
+    structureProblems.push(
+      `正文出现参考资料未提供的数字：${unsupportedNumbers.join("、")}，需要删除或改为不带数字的审慎分析`,
+    );
   const structure = articleStructure(article.body);
   if (structure.length < ARTICLE_MIN_CHARACTERS)
     structureProblems.push(
@@ -1642,11 +1905,11 @@ async function qualityCheck(article, key, env, usage = null) {
       {
         role: "system",
         content:
-          "你是中文内容平台资深审稿编辑。只返回JSON。正文中的 **...** 是重点加粗标记，不属于事实内容。检查首段导语是否在100字内概括核心信息；检查末段是否以“客观看来”“长远来看”“长远看来”“在我看来”或“更值得关注的是”等自然语气，基于正文事实给出行业判断、影响分析或趋势预测，并具有独特视角。禁止使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。缺来源或未证实的问题只能建议删除、软化或去掉具体数字，禁止建议编造或补充来源。",
+          "你是中文内容平台资深审稿编辑。只返回JSON。正文中的 **...** 是重点加粗标记，不属于事实内容。重点检查稿件是否有清晰、具体、贯穿全文的独特观点，是否只是对热点报道逐段复述、调整语序或做同义词替换；检查标题是否与热点原标题有明显差异且准确、有阅读动力；检查正文是否围绕一个核心判断，用2到3层事实和分析推进，而不是罗列素材或空泛总结。首段导语须在100字内呈现核心观点；末段须以“客观看来”“长远来看”“长远看来”“在我看来”或“更值得关注的是”等自然语气给出有增量的判断。禁止使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。缺来源或未证实的问题只能建议删除、软化或去掉具体数字，禁止建议编造或补充来源。problems 数组只填写真实缺陷；符合要求的项目不要写入 problems。若没有问题，返回空数组。",
       },
       {
         role: "user",
-        content: `检查稿件的逻辑、事实一致性、合规和AI味。返回 {\"score\":0到100,\"problems\":[\"问题\"]}。\n标题：${article.title}\n正文：${article.body}`,
+        content: `检查稿件的差异化、观点价值、标题吸引力、逻辑、事实一致性、合规和AI味。请将稿件与参考资料比较，发现沿用资料句式、叙事顺序或逐段同义改写时明确指出。机器计算的标题相似度不超过55%时，不要报告“标题与热点原标题相似”。返回 {\"score\":0到100,\"problems\":[\"问题\"]}。\n热点原标题：${article.origin_title || "未提供"}\n机器标题相似度：${Math.round(Number(article.title_similarity || 0) * 100)}%\n选定角度：${article.writing_angle || "未提供"}\n稿件标题：${article.title}\n正文：${article.body}\n参考资料：${String(article.source_material || "未提供").slice(0, 3600)}`,
       },
     ],
     key,
@@ -1661,13 +1924,19 @@ async function qualityCheck(article, key, env, usage = null) {
       Math.round(Number(ai.score) || 75) - localProblems.length * 5,
     ),
   );
-  const score = structureProblems.length
+  const aiProblems = actualAiProblems(ai.problems);
+  const severeAiProblems = aiProblems.filter((problem) =>
+    /未提供来源|缺少来源|无来源|事实错误|事实不一致|编造|夸大|伪原创|逐段复述|同义改写|标题.*相似/.test(
+      problem,
+    ),
+  );
+  const score = structureProblems.length || severeAiProblems.length
     ? Math.min(59, adjustedScore)
     : adjustedScore;
   const problems = [
     ...new Set([
       ...localProblems,
-      ...(Array.isArray(ai.problems) ? ai.problems.map(String) : []),
+      ...aiProblems,
     ]),
   ];
   return {
@@ -1733,9 +2002,10 @@ async function saveArticle(
       originalCreatedAt,
     )
     .run();
+  const { source_material: _sourceMaterial, ...publicArticle } = article;
   return {
     id,
-    ...article,
+    ...publicArticle,
     status,
     qc_score: qc.score,
     qc_level: qc.level,
@@ -1798,6 +2068,19 @@ async function generationStage(stage, action) {
   }
 }
 
+function buildDraftMessages(topicTitle, track, material) {
+  return [
+    {
+      role: "system",
+      content: `你是有鲜明判断力的中文内容作者，当前赛道是${track}，只返回JSON。你的任务不是洗稿、伪原创或同义改写：事实来自资料，但标题、文章结构、段落次序和表达路径必须重新建立，严禁沿用任一来源的标题模板、叙事顺序、句式或逐段复述。先比较全部资料，从以下方向中选择最有增量且最适合本事件的一种切入：被忽视的利益关系、反常识变化、对普通人的实际影响、行业拐点、隐藏成本、竞争格局、政策执行落差或未来信号。用一句明确的核心观点统领全文，再用2到3层事实与分析推进；不能只总结“发生了什么”，必须回答“为什么值得关注、影响谁、接下来可能怎样”。事实不足时只能做有边界的分析，不能编造数字、机构、日期和来源；资料没有出现的比例、金额、日期、统计区间或测算结果一律不得写入，也不得自行换算或估算。正文净字数必须为600到1000个中文汉字，任何情况下不得超过1000字，建议控制在700到900字。首段必须以“导语：”开头，在100字内同时呈现事件和文章核心观点。末段体现${track}行业判断，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头，给出有增量的总结、影响判断或趋势预测。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗和空泛强调。`,
+    },
+    {
+      role: "user",
+      content: `热点原标题是“${topicTitle}”。先确定一个与现有报道明显不同、但有资料支撑的写作角度，再写一篇600到1000字、有观点、有阅读动力的完整中文文章。标题要准确、新颖、有吸引力，不能复制、缩写或同义替换热点原标题；同时给出两个同样准确但角度不同的备选标题，全部控制在8到30字，不使用“重磅”“震惊”“引发关注”“网友热议”等模板词。正文依次为100字内导语、围绕核心观点推进的2到3层事实与分析、自然语气的观点收束。不要按资料顺序复述，不要写成信息汇编。返回 {\"angle\":\"\",\"title\":\"\",\"alternative_titles\":[\"\",\"\"],\"body\":\"\"}。\n${material}`,
+    },
+  ];
+}
+
 async function generateOne(item, env, email) {
   const deepseekKey = await getConfig(env, email, "DEEPSEEK_API_KEY");
   const tavilyKey = await getConfig(env, email, "TAVILY_API_KEY");
@@ -1818,16 +2101,7 @@ async function generateOne(item, env, email) {
   if (!material.trim())
     throw new Error("搜索源没有返回可用素材，请检查 Tavily 或博查 Key");
   const track = TRACKS[item.track_key]?.name || item.track || "综合";
-  const draftMessages = [
-    {
-      role: "system",
-      content: `你是中文内容平台资深作者，当前赛道是${track}。只返回JSON。事实必须来自所给资料；资料不足时只能做分析，不能编造数字、机构、日期和来源。正文净字数必须为800到1500个中文汉字，任何情况下都不得超过1500字，建议完整展开到1000至1400字，绝不能用短摘要代替正文。首段必须以“导语：”开头，用100字以内概括事件、核心结论和最重要信息。末段要体现${track}行业专业判断，给出总结评论、影响分析或趋势预测，但语气必须自然，可根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测，不能伪装成已发生事实。正文只将3到6处最重要的结论、关键数字或核心信息用 **重点内容** 标记，禁止整段加粗、连续加粗或强调空泛套话。`,
-    },
-    {
-      role: "user",
-      content: `围绕选题写一篇800到1500字的完整中文文章。标题完整、有信息量、不超过30字。正文结构必须依次为：100字内导语、充分展开的事实与分析正文、自然语气的观点收束。导语提前呈现核心内容；末段站在专业视角提炼热点背后的行业逻辑和独特判断，但不要自称专家。正文用 **...** 标出3到6处读者最需要快速捕捉的信息。返回 {\"title\":\"\",\"body\":\"\"}。\n选题：${item.title}\n${material}`,
-    },
-  ];
+  const draftMessages = buildDraftMessages(item.title, track, material);
   let draft = await generationStage("正文生成", () =>
     runDeepSeekJson(
       draftMessages,
@@ -1846,6 +2120,19 @@ async function generateOne(item, env, email) {
       draftMessages,
     ),
   );
+  draft = await generationStage("原创性复核", () =>
+    repairDraftIntegrity(
+      draft,
+      material,
+      track,
+      deepseekKey,
+      draftingUsage,
+      draftMessages,
+    ),
+  );
+  draft = await generationStage("差异化标题", () =>
+    ensureDistinctTitle(draft, item.title, deepseekKey, draftingUsage),
+  );
   const article = {
     title: String(draft.title || item.title)
       .trim()
@@ -1853,6 +2140,10 @@ async function generateOne(item, env, email) {
     body: finalizeArticleBody(draft.body),
     track,
     source: item.source || "",
+    origin_title: item.title,
+    writing_angle: String(draft.angle || "").trim().slice(0, 180),
+    title_similarity: Number(draft.title_similarity || 0),
+    source_material: material.slice(0, 4800),
     research_provider: search.provider,
     image_queries: [],
   };
@@ -2452,11 +2743,11 @@ async function handleApi(request, env, user) {
       {
         role: "system",
         content:
-          `你是中文内容编辑。只返回JSON。根据问题重写稿件；缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字。正文净字数必须为800到1500字，任何情况下都不得超过1500字，建议控制在900到1300字。首段必须以“导语：”开头，在100字以内提前说明核心内容。末段要体现${old.track || "相关"}行业专业判断，给出总结、影响分析或趋势预测，但不要自称专家；根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和强调空泛套话。`,
+          `你是有鲜明判断力的中文内容编辑，只返回JSON。根据问题重新组织稿件，不做逐句修补、同义替换或段落换序。先提炼一个更具体、更有增量的核心观点，再围绕该观点重建标题、导语和2到3层论证。缺来源只能删除、软化或去掉具体数字，绝不新增来源、机构、日期或数字；无法从原稿事实确认的比例、金额、日期、统计区间或测算结果必须删除，不得自行换算或估算。正文净字数必须为600到1000字，任何情况下不得超过1000字，建议控制在700到900字。标题须准确、新颖、有阅读动力，不使用“重磅”“震惊”“引发关注”“网友热议”等模板词。首段必须以“导语：”开头，在100字以内呈现事件和核心观点。末段要体现${old.track || "相关"}行业判断，给出有增量的总结、影响分析或趋势预测，但不要自称专家；根据内容以“客观看来，”“长远来看，”“长远看来，”“在我看来，”或“更值得关注的是，”自然开头。严禁使用“专家认为”“专家指出”“专家表示”“业内专家”“专家点评”等学术化表达。推断必须明确为分析或预测。只用 **重点内容** 标记3到6处最重要的结论、关键数字或核心信息，禁止整段加粗和空泛强调。`,
       },
       {
         role: "user",
-        content: `完成事实修订，将全文调整为800到1500字，并重新整理导语、正文、自然观点收束和重点加粗。返回 {\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n标题：${old.title}\n正文：${old.body}`,
+        content: `完成事实修订，将全文调整为600到1000字，强化差异化角度、标题吸引力、核心观点、导语、论证推进、自然观点收束和重点加粗。返回 {\"angle\":\"\",\"title\":\"\",\"body\":\"\"}。\n问题：${problems.join("；")}\n原标题：${old.title}\n正文：${old.body}`,
       },
     ];
     let revised = await runDeepSeekJson(
@@ -2464,6 +2755,7 @@ async function handleApi(request, env, user) {
       key,
       0.4,
     );
+    revised = await ensureDistinctTitle(revised, old.title, key);
     revised = await expandDraftToMinimum(
       revised,
       stripHighlightMarkup(old.body),
@@ -2477,6 +2769,9 @@ async function handleApi(request, env, user) {
       body: finalizeArticleBody(revised.body || old.body),
       track: old.track,
       source: old.source,
+      origin_title: old.title,
+      writing_angle: String(revised.angle || "").trim().slice(0, 180),
+      title_similarity: Number(revised.title_similarity || 0),
       cover_url: old.cover_url || "",
       image_urls: normalizeImageUrls(old.image_urls, old.cover_url),
     };
