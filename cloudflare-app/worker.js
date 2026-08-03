@@ -12,7 +12,7 @@ const ARTICLE_MIN_CHARACTERS = 600;
 const ARTICLE_MAX_CHARACTERS = 1000;
 const TITLE_SIMILARITY_LIMIT = 0.55;
 const HOTSPOT_REQUEST_TIMEOUT_MS = 9000;
-const GENERATION_CONCURRENCY = 2;
+const MAX_GENERATION_ITEMS_PER_REQUEST = 1;
 const D1_MAX_RETRIES = 3;
 const WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
@@ -2415,7 +2415,16 @@ async function handleApi(request, env, user) {
   }
   if (path === "/api/generate" && request.method === "POST") {
     const body = await request.json();
-    const items = Array.isArray(body.items) ? body.items.slice(0, 20) : [];
+    const requestedItems = Array.isArray(body.items) ? body.items : [];
+    if (requestedItems.length > MAX_GENERATION_ITEMS_PER_REQUEST)
+      return json(
+        {
+          error:
+            "批量撰稿已升级为逐篇独立任务，请刷新页面后重新提交选题",
+        },
+        409,
+      );
+    const items = requestedItems.slice(0, MAX_GENERATION_ITEMS_PER_REQUEST);
     if (!items.length) return json({ error: "至少选择一个选题" }, 400);
     let generationConfigs;
     try {
@@ -2445,7 +2454,7 @@ async function handleApi(request, env, user) {
     const results = new Array(items.length);
     const persistArticle = createSerialTaskQueue();
     let cursor = 0;
-    const workerCount = Math.min(GENERATION_CONCURRENCY, items.length);
+    const workerCount = items.length;
     await Promise.all(
       Array.from({ length: workerCount }, async () => {
         while (true) {

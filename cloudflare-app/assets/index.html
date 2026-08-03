@@ -1606,6 +1606,44 @@
           toast(error.message);
         }
       }
+      async function runTaskQueue(
+        items,
+        concurrency,
+        task,
+        onProgress = () => {},
+      ) {
+        const results = new Array(items.length);
+        let nextIndex = 0;
+        let completed = 0;
+        const worker = async () => {
+          while (true) {
+            const index = nextIndex++;
+            if (index >= items.length) return;
+            try {
+              results[index] = await task(items[index], index);
+            } catch (error) {
+              results[index] = {
+                ok: false,
+                title: items[index]?.title || "未命名选题",
+                stage: "任务请求",
+                error: error.message || "请求失败",
+              };
+            } finally {
+              completed += 1;
+              try {
+                onProgress({ completed, total: items.length, results });
+              } catch {}
+            }
+          }
+        };
+        await Promise.all(
+          Array.from(
+            { length: Math.min(Math.max(1, concurrency), items.length) },
+            () => worker(),
+          ),
+        );
+        return results;
+      }
       async function generateSelected() {
         const nodes = $$("#hotspotBox input:checked");
         if (!nodes.length) return toast("请先勾选选题");
@@ -1628,14 +1666,43 @@
         setGenerationNotice(
           "working",
           `后台正在撰写 ${items.length} 篇稿件`,
-          "正在自动检索事实、生成正文并完成质量检查；你可以继续查看和发布已有稿件。",
+          "已建立独立任务队列，最多同时处理 2 篇；单篇失败不会影响其余稿件。",
         );
         try {
-          const d = await api("/generate", {
-            method: "POST",
-            body: JSON.stringify({ items }),
-          });
-          const results = d.results || [];
+          const cleanupWarnings = new Set();
+          let basicDeepseekFallbackUsed = false;
+          const results = await runTaskQueue(
+            items,
+            2,
+            async (item) => {
+              const response = await api("/generate", {
+                method: "POST",
+                body: JSON.stringify({ items: [item] }),
+              });
+              if (response.basic_deepseek_fallback_used)
+                basicDeepseekFallbackUsed = true;
+              if (response.topic_cleanup_warning)
+                cleanupWarnings.add(response.topic_cleanup_warning);
+              return (
+                response.results?.[0] || {
+                  ok: false,
+                  title: item.title,
+                  stage: "生成",
+                  error: "任务没有返回稿件结果",
+                }
+              );
+            },
+            ({ completed, total, results: currentResults }) => {
+              const successCount = currentResults.filter(
+                (result) => result?.ok,
+              ).length;
+              setGenerationNotice(
+                "working",
+                `后台正在撰写 ${items.length} 篇稿件`,
+                `已完成 ${completed} / ${total} 篇，其中 ${successCount} 篇已进入稿库；剩余任务继续独立处理。`,
+              );
+            },
+          );
           const ok = results.filter((x) => x.ok);
           const ready = ok.filter((x) => x.qc_level !== "red");
           const needsFix = ok.length - ready.length;
@@ -1664,7 +1731,7 @@
           setGenerationNotice(
             fail ? "failed" : "done",
             `${ok.length} 篇稿件已进入稿库`,
-            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${d.basic_deepseek_fallback_used ? "。部分基础任务因 Cloudflare AI 暂不可用，已由 DeepSeek 自动兜底" : ""}${d.topic_cleanup_warning ? `。${d.topic_cleanup_warning}` : ""}。`,
+            `${ready.length} 篇可继续发布${needsFix ? `，${needsFix} 篇待点击“稿件修改”自动复检` : ""}${fail ? `，${fail} 篇生成失败。原因：${failureDetail}` : ""}${basicDeepseekFallbackUsed ? "。部分基础任务因 Cloudflare AI 暂不可用，已由 DeepSeek 自动兜底" : ""}${cleanupWarnings.size ? `。${[...cleanupWarnings].join("；")}` : ""}。`,
           );
           toast(`${ok.length} 篇稿件已完成后台撰写与质检`);
         } catch (e) {
