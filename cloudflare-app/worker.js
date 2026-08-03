@@ -2972,7 +2972,17 @@ export default {
           : loginPage(env);
       if (url.pathname.startsWith("/api/"))
         return await handleApi(request, env, user);
-      return env.ASSETS.fetch(request);
+      const assetResponse = await env.ASSETS.fetch(request);
+      if (url.pathname === "/" || url.pathname.endsWith("/index.html")) {
+        const headers = new Headers(assetResponse.headers);
+        headers.set("cache-control", "no-store");
+        return new Response(assetResponse.body, {
+          status: assetResponse.status,
+          statusText: assetResponse.statusText,
+          headers,
+        });
+      }
+      return assetResponse;
     } catch (error) {
       return json({ error: error.message || "服务器错误" }, 500);
     }
