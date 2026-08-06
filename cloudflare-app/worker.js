@@ -10,6 +10,7 @@ const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const ARTICLE_RETENTION_HOURS = 36;
 const ARTICLE_MIN_CHARACTERS = 600;
 const ARTICLE_MAX_CHARACTERS = 1000;
+const ARTICLE_IMAGE_LIMIT = 2;
 const TITLE_SIMILARITY_LIMIT = 0.55;
 const HOTSPOT_REQUEST_TIMEOUT_MS = 9000;
 const MAX_GENERATION_ITEMS_PER_REQUEST = 1;
@@ -1030,7 +1031,7 @@ function normalizeImageUrls(value, coverUrl = "") {
       const url = new URL(String(candidate || "").trim());
       if (url.protocol !== "https:" || unique.includes(url.href)) continue;
       unique.push(url.href);
-      if (unique.length === 3) break;
+      if (unique.length === ARTICLE_IMAGE_LIMIT) break;
     } catch {}
   }
   return unique;
@@ -1044,7 +1045,7 @@ function normalizeImageQueries(value) {
         .map((query) => String(query || "").trim().replace(/\s+/g, " "))
         .filter((query) => query.length >= 3 && query.length <= 80),
     ),
-  ].slice(0, 3);
+  ].slice(0, ARTICLE_IMAGE_LIMIT);
 }
 
 async function imageSearchQueries(article, deepseekKey, env, usage = null) {
@@ -1058,7 +1059,7 @@ async function imageSearchQueries(article, deepseekKey, env, usage = null) {
           {
             role: "system",
             content:
-              "Return JSON only. Create exactly 3 specific English Pexels stock-photo searches for the article. Each query must use 2-6 concrete visual terms and stay faithful to the event, named subject, location and industry in the supplied text. Cover three distinct visual angles. If an exact news image is unlikely, use a truthful scene-level representation of the same topic. Never use generic filler such as news, background, abstract, business or technology alone. Return {\"queries\":[\"\", \"\", \"\"]}.",
+              "Return JSON only. Create exactly 2 specific English Pexels stock-photo searches for the article. Each query must use 2-6 concrete visual terms and stay faithful to the event, named subject, location and industry in the supplied text. Cover two distinct visual angles suitable for one cover and one inline image. If an exact news image is unlikely, use a truthful scene-level representation of the same topic. Never use generic filler such as news, background, abstract, business or technology alone. Return {\"queries\":[\"\", \"\"]}.",
           },
           {
             role: "user",
@@ -1131,7 +1132,7 @@ async function rankPexelsCandidates(
         {
           role: "system",
           content:
-            "Return JSON only. Select 2-3 Pexels photos that are clearly relevant to the supplied Chinese article. Judge using each search query and photo alt text. Prefer different visual angles tied to the event subject, place or industry. Reject generic filler, misleading people/places and any image that could imply an unsupported exact event. If fewer than 2 are genuinely relevant, return only the relevant ones. Return {\"selected_ids\":[\"\"]}.",
+            "Return JSON only. Select exactly 2 Pexels photos that are clearly relevant to the supplied Chinese article: one suitable cover and one complementary inline image. Judge using each search query and photo alt text. Prefer different visual angles tied to the event subject, place or industry. Reject generic filler, misleading people/places and any image that could imply an unsupported exact event. If fewer than 2 are genuinely relevant, return only the relevant ones. Return {\"selected_ids\":[\"\"]}.",
         },
         {
           role: "user",
@@ -1158,7 +1159,7 @@ async function rankPexelsCandidates(
     const selectedIds = new Set(
       (Array.isArray(result.selected_ids) ? result.selected_ids : [])
         .map(String)
-        .slice(0, 3),
+        .slice(0, ARTICLE_IMAGE_LIMIT),
     );
     return candidates.filter((candidate) => selectedIds.has(candidate.id));
   } catch {
@@ -1214,7 +1215,7 @@ async function pexelsImages(
     selected.push(photo.url);
     usedIds.add(photo.id);
   }
-  if (selected.length < 3) {
+  if (selected.length < ARTICLE_IMAGE_LIMIT) {
     for (const photo of groups.flat()) {
       if (
         !photo.url ||
@@ -1224,7 +1225,7 @@ async function pexelsImages(
         continue;
       selected.push(photo.url);
       usedIds.add(photo.id);
-      if (selected.length === 3) break;
+      if (selected.length === ARTICLE_IMAGE_LIMIT) break;
     }
   }
   return normalizeImageUrls(selected);

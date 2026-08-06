@@ -1112,7 +1112,7 @@
               <div>
                 <p class="eyebrow">Step 02 · Library & Publish</p>
                 <h1>稿库与发布</h1>
-                <p>统一管理稿件、2–3 张主题配图、发布平台与自动发布任务</p>
+                <p>统一管理稿件、2 张主题配图、发布平台与自动发布任务</p>
               </div>
               <div class="actions">
                 <span class="chip">⏱ 稿件仅保留 36 小时</span>
@@ -1352,6 +1352,7 @@
           login: "https://www.zhihu.com/creator",
         },
       };
+      const ARTICLE_IMAGE_LIMIT = 2;
       let articles = [],
         filter = "all",
         generationBusy = false;
@@ -1887,7 +1888,7 @@
           const url = safeLink(value || "");
           if (!url || unique.includes(url)) continue;
           unique.push(url);
-          if (unique.length === 3) break;
+          if (unique.length === ARTICLE_IMAGE_LIMIT) break;
         }
         return unique;
       }
@@ -1896,7 +1897,7 @@
           .split(/\n{2,}/)
           .filter((part) => part.trim());
         const images = Array.isArray(inlineImages)
-          ? inlineImages.slice(0, 3)
+          ? inlineImages.slice(0, ARTICLE_IMAGE_LIMIT)
           : articleImages(article).slice(1);
         if (!paragraphs.length) return "";
         const placements = new Map();
@@ -2364,7 +2365,7 @@
             ? `<label class="article-select"><input type="checkbox" ${selectedArticleIds.has(a.id) ? "checked" : ""} onchange="toggleArticleSelection('${a.id}',this.checked)">批量选择</label>`
             : "";
         const copyTools = `<div class="body-copy"><button class="btn ghost sm" onclick="copyText('${a.id}','title')">复制标题</button><button class="btn ghost sm" onclick="copyText('${a.id}','body')">复制正文</button></div>`;
-        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="muted">正文 ${articleCharacterCount(a.body)}/1000 字</span><span class="muted">配图 ${articleImages(a).length}/3</span><span class="muted" title="自生成起满36小时自动删除">⏱ ${retentionText(a)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${articleBodyHtml(a)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
+        return `<article class="card${red ? " red" : ""}"><div class="cov"${cover}>${a.cover_url ? "" : "AI 内容稿件"}</div><div class="cardin"><div class="row1">${selector}<span class="tkmini">${esc(a.track)}</span><span class="qc ${q.cls}">质检 ${a.qc_score ?? "—"}</span><span class="muted">${esc(a.source)}</span><span class="muted">正文 ${articleCharacterCount(a.body)}/1000 字</span><span class="muted">配图 ${articleImages(a).length}/${ARTICLE_IMAGE_LIMIT}</span><span class="muted" title="自生成起满36小时自动删除">⏱ ${retentionText(a)}</span><span class="statustag${a.status === "已发" ? " yes" : ""}">${esc(a.status)}</span></div><h3>${esc(a.title)}</h3><div class="body" onclick="this.classList.toggle('full')" title="点击展开或收起正文">${articleBodyHtml(a)}</div>${copyTools}${q.p.length ? `<div class="probs${red ? " bad" : ""}"><b>${red ? "⛔ 拦截原因" : "⚠ 质检发现的问题"}</b><br>${q.p.map((x) => "• " + esc(x)).join("<br>")}</div>` : ""}${ctx === "library" ? publishStatusHtml(a.id) : ""}<div class="actions">${acts}</div></div></article>`;
       }
       function toggleArticleSelection(id, checked) {
         checked ? selectedArticleIds.add(id) : selectedArticleIds.delete(id);
