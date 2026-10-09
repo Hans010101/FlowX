@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "flowx-app",
+  "account_id": "a828bebda1f352216c7d7da425bad17a",
   "main": "worker.js",
   "compatibility_date": "2026-07-19",
   "compatibility_flags": ["nodejs_compat"],
@@ -17,7 +18,7 @@
     {
       "binding": "DB",
       "database_name": "flowx-cloud-db",
-      "database_id": "b3abe2b6-125c-453d-b6c6-2697cd048f67"
+      "database_id": "dc5bc99b-bac3-4fc7-b51c-ba9b43c465ec"
     }
   ],
   "triggers": {

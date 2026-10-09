@@ -6,8 +6,8 @@ FlowX 是一套面向中文内容团队的本地优先 AI 内容工作流：抓�
 
 ## 在线使用
 
-- 云端工作台：<https://flowx-app.hans-pan007.workers.dev>
-- 产品介绍站：<https://flowx-2hv.pages.dev>
+- 云端工作台：<https://flowx-app.bitman001.workers.dev>
+- 产品介绍站：<https://flowx-3kx.pages.dev>
 
 云端工作台运行在 Cloudflare Workers + D1，前台只保留「选题、稿库·发布、设置」：勾选热点并开始撰稿后，检索、写作和质检在后台执行，完成的稿件直接进入稿库。首次访问使用获准的 Google 账号登录；登录会话在同一浏览器中保留 30 天。登录后可按账号配置 DeepSeek、Tavily、博查、Pexels Key、热点来源与赛道，并通过 Wechatsync 浏览器扩展一键同步到今日头条、百家号和知乎草稿箱。
 
