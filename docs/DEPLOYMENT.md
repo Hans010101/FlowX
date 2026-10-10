@@ -62,6 +62,23 @@ npx wrangler deploy --config cloudflare-app/wrangler.jsonc
 - `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-google-callback-002-20261010.png`
 - `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-login-002-verified-20261010.png`
 
+### 007 删除就绪验收（2026-10-10）
+
+在不触发写稿、发布或外部消息的前提下，已按“007 Cloudflare 资源全部不存在”完成增量只读验收：
+
+- 当前 `wrangler.jsonc`、线上 Worker 绑定和 OAuth 回调均只指向 002 账号；D1 绑定为 `dc5bc99b-bac3-4fc7-b51c-ba9b43c465ec`，没有 R2 绑定，定时任务仍为 `* * * * *`。
+- 使用 `hans.pan007@gmail.com` 从 Google OAuth 登录 002 Worker 成功；设置页能读取该邮箱独立保存的 4 项 API 配置状态、8 个热点源、9 个赛道和 DailyHot 公共地址，未发现旧 Worker 主机、旧账号 ID 或旧 D1 ID。
+- 线上选题页和稿库页读取正常；当前稿库为 0 篇，符合 36 小时保留策略。部署包含 `scheduled` 处理器，且定时任务仍在线，历史迁移快照中的 2 篇稿件现已不再出现在有效稿库中。
+- 迁移后的目标 D1 快照包含 5 张用户表、14 条按邮箱加密的配置和 2 篇稿件；图片 JSON 全部有效，图片只引用 `images.pexels.com`，发布记录与发布任务均无孤儿记录。
+- 对当前在线 002 D1 的 7 张表、51 个文本字段执行只读扫描，共检查 17 个旧 Worker 主机、旧账号 ID、旧 D1 ID 变体，命中数均为 0，写入行数为 0。历史文章正文未改写。
+- 线上界面已显示“2 张主题配图”，实现为 1 张封面与 1 张正文图；当前部署包含提交 `7ac56fa`。
+
+结论：FlowX 当前运行时、OAuth、D1、定时清理和图片附件均不再依赖 007 Cloudflare 资源，可以把 007 作为独立备份处置。发布到今日头条、百家号、知乎仍依赖当前浏览器中的文章同步助手及各平台登录 Cookie；验收时扩展未连接，因此这只表示“FlowX 已与 007 解耦”，不表示外部平台登录态已全部可用。
+
+本次在线 D1 只读扫描证据：
+
+- `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/002-deletion-flowx-db-scan-20261010.json`
+
 ## 为什么不把 FastAPI 原样放进 Workers
 
 原始后端使用 SQLite、本地文件、后台调度线程和 `subprocess`，发布环节还要求浏览器扩展登录态。这些能力不属于 Cloudflare Pages/Workers 的运行模型。因此云端版改用 D1、Web Crypto 和 Worker `fetch`，并明确移除依赖本机浏览器的发布链路。
