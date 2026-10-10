@@ -36,12 +36,28 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET --config cloudflare-app/wrangler.js
 npx wrangler deploy --config cloudflare-app/wrangler.jsonc
 ```
 
-在 Google Cloud 创建“Web 应用”OAuth 客户端，并配置：
+在现有 Google Cloud“Web 应用”OAuth 客户端中确认：
 
 - 已获授权的 JavaScript 来源：`https://flowx-app.bitman001.workers.dev`
 - 已获授权的重定向 URI：`https://flowx-app.bitman001.workers.dev/auth/callback`
 
 `ALLOWED_EMAILS` 使用英文逗号分隔允许登录的 Google 邮箱。`SESSION_SECRET` 应使用至少 32 字节的随机值。当前实例：<https://flowx-app.bitman001.workers.dev>。登录态由 `HttpOnly`、`Secure`、`SameSite=Lax` Cookie 保存 30 天；API Key 在 Worker 内以 AES-GCM 加密，并以 Google 邮箱作为数据分区写入 D1。稿库同样按邮箱隔离，仓库和前端只保存“是否已配置”。
+
+### 002 账号迁移记录（2026-10-10）
+
+- Cloudflare 账号：`a828bebda1f352216c7d7da425bad17a`
+- Worker：<https://flowx-app.bitman001.workers.dev>
+- D1：`dc5bc99b-bac3-4fc7-b51c-ba9b43c465ec`
+- 定时任务：`* * * * *`
+- 部署代码：Git 提交 `127f1c51fa4349f646bee6896cfed0457eef36e4`
+- Google OAuth 客户端：`91623359067-idgm0q4mutlgkkjnh8ggjkc6840kdids.apps.googleusercontent.com`
+
+线上 Worker 已确认使用新的回调地址，但这不能证明 Google Cloud 控制台中的白名单已经保存。请使用拥有上述 OAuth 客户端的 Google Cloud 项目，在[该客户端配置页](https://console.cloud.google.com/auth/clients/91623359067-idgm0q4mutlgkkjnh8ggjkc6840kdids.apps.googleusercontent.com)确认本节列出的 JavaScript 来源和重定向 URI；旧 007 地址可暂时保留作为回退，不要新建或重置客户端。修改 Google OAuth 白名单后无需重新部署 Worker。
+
+最终部署与只读核验证据保存在：
+
+- `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-final-deployed-20261010.json`
+- `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-final-readonly-verified-20261010.json`
 
 ## 为什么不把 FastAPI 原样放进 Workers
 
