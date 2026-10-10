@@ -50,14 +50,17 @@ npx wrangler deploy --config cloudflare-app/wrangler.jsonc
 - D1：`dc5bc99b-bac3-4fc7-b51c-ba9b43c465ec`
 - 定时任务：`* * * * *`
 - 部署代码：Git 提交 `127f1c51fa4349f646bee6896cfed0457eef36e4`
+- Google Cloud 项目：`FlowX Cloud`（`absolute-disk-502511-r5`）
 - Google OAuth 客户端：`91623359067-idgm0q4mutlgkkjnh8ggjkc6840kdids.apps.googleusercontent.com`
 
-线上 Worker 已确认使用新的回调地址，但这不能证明 Google Cloud 控制台中的白名单已经保存。请使用拥有上述 OAuth 客户端的 Google Cloud 项目，在[该客户端配置页](https://console.cloud.google.com/auth/clients/91623359067-idgm0q4mutlgkkjnh8ggjkc6840kdids.apps.googleusercontent.com)确认本节列出的 JavaScript 来源和重定向 URI；旧 007 地址可暂时保留作为回退，不要新建或重置客户端。修改 Google OAuth 白名单后无需重新部署 Worker。
+现有 OAuth 客户端已保存并回读本节列出的 JavaScript 来源和重定向 URI。Chrome 已通过 `/auth/login` 完成真实登录并进入 002 工作台，原 007 Google 邮箱继续使用。旧 007 OAuth 配置和 Cloudflare 资源保留为迁移备份，不要新建或重置客户端。
 
 最终部署与只读核验证据保存在：
 
 - `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-final-deployed-20261010.json`
 - `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-final-readonly-verified-20261010.json`
+- `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-google-callback-002-20261010.png`
+- `/Users/hans.pan/Library/Application Support/Dianjinshou/migration-002-20261009/flowx-login-002-verified-20261010.png`
 
 ## 为什么不把 FastAPI 原样放进 Workers
 
