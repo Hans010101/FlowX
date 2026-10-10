@@ -53,7 +53,7 @@ npx wrangler deploy --config cloudflare-app/wrangler.jsonc
 - Google Cloud 项目：`FlowX Cloud`（`absolute-disk-502511-r5`）
 - Google OAuth 客户端：`91623359067-idgm0q4mutlgkkjnh8ggjkc6840kdids.apps.googleusercontent.com`
 
-现有 OAuth 客户端已保存并回读本节列出的 JavaScript 来源和重定向 URI。Chrome 已通过 `/auth/login` 完成真实登录并进入 002 工作台，原 007 Google 邮箱继续使用。旧 007 OAuth 配置和 Cloudflare 资源保留为迁移备份，不要新建或重置客户端。
+现有 Google OAuth 客户端已保存并回读本节列出的 JavaScript 来源和重定向 URI。Chrome 已通过 `/auth/login` 完成真实登录并进入 002 工作台，原 007 Google 邮箱继续使用。默认 Wrangler 已切换为 002 Cloudflare OAuth；007 Wrangler OAuth 仅保存在受限迁移目录中作为备份，不要登录、刷新或覆盖共享凭据。旧 007 Cloudflare 资源仍作为迁移备份保留，不要新建或重置 Google OAuth 客户端。
 
 最终部署与只读核验证据保存在：
 
